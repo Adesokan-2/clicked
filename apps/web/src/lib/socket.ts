@@ -28,7 +28,6 @@ export function initSocket(
   });
 
   socket.on('connect', () => {
-    console.log('Socket connected');
     if (!socket) return;
     emitSocketEnvelope(socket, 'resume', { lastEventId: getResumeCursor(token) });
     void runSocketSync(socket, token);
@@ -69,7 +68,6 @@ export function initSocket(
     },
   );
 
-  socket.on('disconnect', () => console.log('Socket disconnected'));
   socket.on('error', (error) => console.error('Socket error:', error));
 
   return socket;
