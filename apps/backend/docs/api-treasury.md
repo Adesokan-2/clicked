@@ -17,6 +17,7 @@ The `routes/treasury.ts` module provides REST endpoints for managing treasury pr
 - Records user votes in the `proposalVotes` table
 - Retrieves proposals with user-specific vote status
 - Enforces authentication via `requireAuth` middleware
+- Checks current conversation membership for each treasury operation
 - Uses `contractId` from `GROUP_TREASURY_CONTRACT_ID` env var (defaults to `'stub'`)
 
 **Database Tables:**
@@ -27,6 +28,8 @@ The `routes/treasury.ts` module provides REST endpoints for managing treasury pr
 **Authentication:**
 
 - All endpoints require authentication via `requireAuth` middleware
+- Every action is authorized against the authenticated user's `conversationMembers` entries
+- Legacy orphaned proposals (no conversation ID) cannot be listed or voted on
 - User ID is extracted from the authenticated request
 - Used for tracking votes and preventing duplicate voting
 
@@ -69,7 +72,7 @@ $$\text{Ledgers} = \frac{\text{Duration in Seconds}}{5}$$
 - `token`: Non-empty string (token identifier)
 - `recipient`: Valid Stellar public key (must start with `G` and be 56 characters)
 - `ttl`: Must be one of: `'24h'`, `'72h'`, `'7d'`
-- `conversationId` (optional): Valid UUID format
+- `conversationId` (**required**): Valid UUID for a conversation the caller belongs to
 - `threshold` (optional): Integer >= 1 (defaults to `3` if not provided)
 - All requests require authentication via bearer token
 
@@ -107,7 +110,10 @@ $$\text{Ledgers} = \frac{\text{Duration in Seconds}}{5}$$
 > }
 > ```
 >
-> - **400 Bad Request**: Invalid input (e.g., invalid recipient address format, invalid TTL value, invalid amount).
+> - **400 Bad Request**: Invalid input, including missing or invalid `conversationId`.
+
+- **403 Forbidden**: Caller is not a member of the requested conversation.
+
 > - **401 Unauthorized**: Authentication missing or invalid bearer token.
 > - **500 Internal Server Error**: Database error or server issue.
 
@@ -143,8 +149,10 @@ $$\text{Ledgers} = \frac{\text{Duration in Seconds}}{5}$$
 > }
 > ```
 >
-> - **404 Not Found**: Proposal ID does not exist.
->
+> - **403 Forbidden**: Caller is not a member of the proposal's conversation, or proposal has no conversation.
+
+- **404 Not Found**: Proposal ID does not exist.
+
 > ```json
 > {
 >   "error": "Proposal not found"
@@ -201,8 +209,10 @@ $$\text{Ledgers} = \frac{\text{Duration in Seconds}}{5}$$
 > }
 > ```
 >
-> - **404 Not Found**: Proposal ID does not exist.
->
+> - **403 Forbidden**: Caller is not a member of the proposal's conversation, or proposal has no conversation.
+
+- **404 Not Found**: Proposal ID does not exist.
+
 > ```json
 > {
 >   "error": "Proposal not found"
@@ -231,11 +241,11 @@ $$\text{Ledgers} = \frac{\text{Duration in Seconds}}{5}$$
 
 > - **Route**: GET /api/treasury/proposals
 
-- **Description**: Retrieves all treasury proposals, optionally filtered by conversationId. Includes the authenticated user's vote status for each proposal.
+- **Description**: Retrieves only proposals from conversations the authenticated user belongs to, optionally limited to one `conversationId`. Includes the caller's vote status for returned proposals.
 
 #### Query Parameters
 
-- `conversationId` (optional): Valid UUID to filter proposals by conversation.
+- `conversationId` (optional): Valid UUID for a conversation the caller belongs to. Without it, only the caller's conversations are included, and orphaned records are excluded.
 
 > #### Response Shapes & Status Codes
 >
@@ -271,3 +281,11 @@ $$\text{Ledgers} = \frac{\text{Duration in Seconds}}{5}$$
 > - **500 Internal Server Error**: Database error.
 
 ---
+
+### Authorization and compatibility notes (Issue #657)
+
+- **POST /api/treasury/propose** requires `conversationId` and checks the caller's membership before inserting a proposal.
+- **GET /api/treasury/proposals?conversationId=UUID** returns `403` for non-members and `400` for malformed UUIDs. No proposals are read before a failed membership check.
+- **GET /api/treasury/proposals** without a filter returns only proposals from the user's conversations. A user with no memberships gets `[]`.
+- **POST /api/treasury/proposals/:id/approve** and **/reject** verify membership against the stored proposal conversation before processing an active proposal or writing a vote.
+- Legacy `treasury_proposals` records with a `NULL` conversation cannot be authorized. They are excluded from listing and return `403` for voting until migrated to an authorized conversation.
