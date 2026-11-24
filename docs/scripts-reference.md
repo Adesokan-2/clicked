@@ -155,13 +155,16 @@ contract today.
 ## `contracts/scripts/deploy_*.sh`
 
 Three scripts, one per contract, each following the same shape (`set -euo pipefail`,
-testnet-only, requiring the `stellar` CLI and `DEPLOYER_SECRET`):
+a `NETWORK` variable defaulting to `testnet`, requiring the `stellar` CLI and
+`DEPLOYER_SECRET`):
 
 | Script | Additional required env vars | Deploys |
 |---|---|---|
 | `deploy_token_transfer.sh` | `TOKEN_CONTRACT_ID` (the SEP-41 token to route transfers through) | `token_transfer` |
 | `deploy_group_treasury.sh` | `TOKEN_CONTRACT_ID` (the SEP-41 token the treasury holds) | `group_treasury` |
 | `deploy_proposals.sh` | `TREASURY_CONTRACT_ID`, `MIN_VOTES` | `proposals` |
+
+All three pass `NETWORK` to `stellar --network` (default: `testnet`). Setting it to `mainnet` or `public` requires `CONFIRM_MAINNET=yes`.
 
 Each reads its contract's compiled wasm from
 `target/wasm32-unknown-unknown/release/<contract>.wasm` — see

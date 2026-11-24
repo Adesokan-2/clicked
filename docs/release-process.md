@@ -259,8 +259,10 @@ resolve. It also skips `proposals`.
 - **Every run produces a new contract ID with empty state.** Balances,
   treasury members, proposals and votes do not move across. Funds held by the
   old `group_treasury` instance stay in the old instance.
-- **The scripts are hard-coded to `NETWORK="testnet"`.** There is no scripted
-  mainnet path. A mainnet deploy needs its own reviewed procedure.
+- **Each script targets `NETWORK` (default: `testnet`).** Set it to `futurenet`
+  or a configured quickstart network for non-production deploys. `mainnet` and
+  `public` additionally require `CONFIRM_MAINNET=yes`, but still need their own
+  reviewed procedure.
 - **New IDs must be propagated by hand**, in this order:
   1. Backend environment: `TOKEN_TRANSFER_CONTRACT_ID`,
      `GROUP_TREASURY_CONTRACT_ID`, and `STELLAR_RPC_URL` (not `RPC_URL`). Then
