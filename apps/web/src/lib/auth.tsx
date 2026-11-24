@@ -20,8 +20,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return null;
     }
 
-    const stored = window.localStorage.getItem('auth_token');
-    return stored || process.env.NEXT_PUBLIC_AUTH_TOKEN || null;
+    return window.localStorage.getItem('auth_token') || null;
   });
   const [isLoading] = useState(false);
 
