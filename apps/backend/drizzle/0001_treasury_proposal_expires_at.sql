@@ -1,0 +1,1 @@
+ALTER TABLE "treasury_proposals" ADD COLUMN "expires_at" timestamp;
