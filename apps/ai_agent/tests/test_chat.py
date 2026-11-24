@@ -2,13 +2,17 @@
 
 from unittest.mock import MagicMock
 
+import httpx
+import pytest
+from openai import APIError, APITimeoutError
+
 _BASE_BODY = {
     "message": "What is Clicked?",
     "conversation_id": "conv-123",
 }
 
 
-def _fake_chat_reply(content: str = "This is a test reply."):
+def _fake_chat_reply(content: str | None = "This is a test reply."):
     msg = MagicMock()
     msg.content = content
     choice = MagicMock()
@@ -72,3 +76,38 @@ def test_correct_model_used(mock_openai, client):
 
     call_args = mock_client.chat.completions.create.call_args
     assert call_args[1]["model"] == "gpt-4o-mini"
+
+
+@pytest.mark.parametrize("content", [None, "   "])
+def test_empty_reply_returns_502(mock_openai, client, content):
+    mock_client = mock_openai.return_value
+    mock_client.chat.completions.create.return_value = _fake_chat_reply(content)
+
+    response = client.post("/chat", json=_BASE_BODY)
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "LLM did not return a reply"
+
+
+def test_timeout_returns_504(mock_openai, client):
+    request = httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
+    mock_client = mock_openai.return_value
+    mock_client.chat.completions.create.side_effect = APITimeoutError(request)
+
+    response = client.post("/chat", json=_BASE_BODY)
+
+    assert response.status_code == 504
+    assert response.json()["detail"] == "OpenAI request timed out"
+
+
+def test_api_error_returns_502(mock_openai, client):
+    request = httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
+    mock_client = mock_openai.return_value
+    mock_client.chat.completions.create.side_effect = APIError(
+        "service unavailable", request=request, body=None
+    )
+
+    response = client.post("/chat", json=_BASE_BODY)
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "OpenAI API error"
