@@ -72,6 +72,7 @@ type Message = {
   createdAt: string;
   sender?: Sender;
   unavailable?: boolean;
+  deleted?: boolean;
   /** File message payload (decrypted envelope plaintext for file messages) */
   filePayload?: {
     fileId: string;
@@ -266,7 +267,7 @@ export default function ConversationPage() {
   const [sending, setSending] = useState(false);
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
 
-  const { messages: inboundMessages } = useInboundPipeline({
+  const { messages: inboundMessages, deletedMessageIds } = useInboundPipeline({
     socket,
     token,
     conversationId: id,
@@ -280,6 +281,18 @@ export default function ConversationPage() {
 
     const merged: Message[] = [];
     for (const msg of messages) {
+      if (deletedMessageIds.has(msg.id)) {
+        merged.push({
+          ...msg,
+          deleted: true,
+          content: null,
+          ciphertext: null,
+          filePayload: undefined,
+          unavailable: false,
+        });
+        continue;
+      }
+
       const inbound = inboundById.get(msg.id);
       if (inbound && inbound.status === 'decrypted' && inbound.plaintext) {
         let filePayload: Message['filePayload'];
@@ -309,6 +322,19 @@ export default function ConversationPage() {
 
     for (const inbound of inboundMessages) {
       const exists = merged.some((m) => m.id === inbound.messageId);
+
+      if (!exists && deletedMessageIds.has(inbound.messageId)) {
+        merged.push({
+          id: inbound.messageId,
+          conversationId: inbound.conversationId,
+          senderId: inbound.senderId,
+          contentType: inbound.contentType,
+          createdAt: inbound.createdAt,
+          deleted: true,
+        });
+        continue;
+      }
+
       if (!exists) {
         if (inbound.status === 'decrypted' && inbound.plaintext) {
           let filePayload: Message['filePayload'];
@@ -346,7 +372,7 @@ export default function ConversationPage() {
     }
 
     return merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-  }, [messages, inboundMessages]);
+  }, [messages, inboundMessages, deletedMessageIds]);
 
   const contacts = useMemo(() => {
     const members = conversation?.members ?? [];
@@ -745,7 +771,7 @@ export default function ConversationPage() {
               {allMessages.map((message) => {
                 const isSelf = message.senderId === currentUser?.id;
                 const senderName = message.sender?.username ?? 'Unknown';
-                const transfer = parseTransferPayload(message);
+                const transfer = message.deleted ? null : parseTransferPayload(message);
 
                 return (
                   <div
@@ -761,7 +787,11 @@ export default function ConversationPage() {
                       {!isSelf ? (
                         <p className="mb-1 px-1 text-xs text-foreground/45">{senderName}</p>
                       ) : null}
-                      {transfer ? (
+                      {message.deleted ? (
+                        <div className="rounded-2xl border border-border bg-background/40 px-4 py-3 text-sm italic text-foreground/45">
+                          Message deleted
+                        </div>
+                      ) : transfer ? (
                         <TransferCard
                           amount={transfer.amount}
                           token={transfer.token}

@@ -16,6 +16,8 @@ import type {
   MessageEnvelopeEvent,
   SyncEnvelope,
 } from '@/lib/crypto/types';
+import { deleteCachedPlaintext } from '@/lib/crypto/plaintextCache';
+import { removeMessages } from '@/lib/search/searchClient';
 
 interface NewMessageMeta {
   id: string;
@@ -36,6 +38,7 @@ interface UseInboundPipelineOptions {
 
 interface UseInboundPipelineReturn {
   messages: InboundMessage[];
+  deletedMessageIds: Set<string>;
   syncing: boolean;
 }
 
@@ -53,6 +56,8 @@ export function useInboundPipeline({
 }: UseInboundPipelineOptions): UseInboundPipelineReturn {
   const [messagesById, setMessagesById] = useState<Map<string, InboundMessage>>(new Map());
   const [syncing, setSyncing] = useState(false);
+  const [deletedMessageIds, setDeletedMessageIds] = useState<Set<string>>(new Set());
+  const deletedMessageIdsRef = useRef(new Set<string>());
 
   const pendingCiphertext = useRef(
     new Map<string, { ciphertext: string; sequenceNumber: number; conversationId: string }>(),
@@ -62,6 +67,8 @@ export function useInboundPipeline({
   const processing = useRef(new Set<string>());
 
   const upsertMessage = useCallback((incoming: InboundMessage) => {
+    if (deletedMessageIdsRef.current.has(incoming.messageId)) return;
+
     setMessagesById((prev) => {
       const next = new Map(prev);
       const existing = next.get(incoming.messageId);
@@ -73,11 +80,19 @@ export function useInboundPipeline({
   const handleEnvelope = useCallback(
     async (input: EnvelopeInput) => {
       if (!token || input.conversationId !== conversationId) return;
+      if (deletedMessageIdsRef.current.has(input.messageId)) return;
       if (processing.current.has(input.messageId)) return;
+
       processing.current.add(input.messageId);
 
       try {
         const result = await processInboundEnvelope(input, token);
+
+        if (deletedMessageIdsRef.current.has(input.messageId)) {
+          deleteCachedPlaintext(input.messageId);
+          return;
+        }
+
         upsertMessage(result);
       } finally {
         processing.current.delete(input.messageId);
@@ -111,6 +126,8 @@ export function useInboundPipeline({
 
   const ingestCiphertext = useCallback(
     (messageId: string, ciphertext: string, partial: Partial<EnvelopeInput>) => {
+      if (deletedMessageIdsRef.current.has(messageId)) return;
+
       if (partial.conversationId && partial.conversationId !== conversationId) return;
 
       const meta = pendingMeta.current.get(messageId);
@@ -139,6 +156,8 @@ export function useInboundPipeline({
 
   const ingestMeta = useCallback(
     (meta: NewMessageMeta) => {
+      if (deletedMessageIdsRef.current.has(meta.id)) return;
+
       if (meta.conversationId !== conversationId) return;
 
       if (meta.unavailable) {
@@ -223,6 +242,27 @@ export function useInboundPipeline({
     }
   }, [token, conversationId, handleEnvelope]);
 
+  const handleMessageDeleted = useCallback((event: { messageId: string }) => {
+    const { messageId } = event;
+
+    deletedMessageIdsRef.current.add(messageId);
+
+    setDeletedMessageIds((prev) => {
+      const next = new Set(prev);
+      next.add(messageId);
+      return next;
+    });
+
+    pendingCiphertext.current.delete(messageId);
+    pendingMeta.current.delete(messageId);
+
+    deleteCachedPlaintext(messageId);
+
+    void removeMessages([messageId]).catch((error) => {
+      console.warn('Failed to remove deleted message from search index', error);
+    });
+  }, []);
+
   // Live envelope delivery (#144).
   useEffect(() => {
     if (!socket) return;
@@ -256,13 +296,15 @@ export function useInboundPipeline({
     socket.on('message_envelope', onMessageEnvelope);
     socket.on('device_envelope', onDeviceEnvelope);
     socket.on('new_message', onNewMessage);
+    socket.on('message_deleted', handleMessageDeleted);
 
     return () => {
       socket.off('message_envelope', onMessageEnvelope);
       socket.off('device_envelope', onDeviceEnvelope);
       socket.off('new_message', onNewMessage);
+      socket.off('message_deleted', handleMessageDeleted);
     };
-  }, [socket, conversationId, handleEnvelope, ingestCiphertext, ingestMeta]);
+  }, [socket, conversationId, handleEnvelope, ingestCiphertext, ingestMeta, handleMessageDeleted]);
 
   // Offline sync on connect (#137).
   useEffect(() => {
@@ -275,5 +317,5 @@ export function useInboundPipeline({
     [messagesById],
   );
 
-  return { messages, syncing };
+  return { messages, deletedMessageIds, syncing };
 }
