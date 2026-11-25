@@ -9,9 +9,11 @@ from pydantic import BaseModel
 from weaviate.classes.query import Filter
 
 try:
-    from openai import OpenAI
+    from openai import APIError, APITimeoutError, OpenAI
 except ImportError:  # pragma: no cover - exercised when the dependency is absent
     OpenAI = None  # type: ignore[assignment, misc]
+    APIError = Exception  # type: ignore[assignment, misc]
+    APITimeoutError = Exception  # type: ignore[assignment, misc]
 
 app = FastAPI(title="AI Agent API")
 
@@ -96,15 +98,24 @@ def health_check():
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
     client = _openai_client()
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": request.message},
-        ],
-        timeout=30,
-    )
-    return ChatResponse(reply=response.choices[0].message.content)
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": request.message},
+            ],
+            timeout=30,
+        )
+    except APITimeoutError:
+        raise HTTPException(status_code=504, detail="OpenAI request timed out")
+    except APIError:
+        raise HTTPException(status_code=502, detail="OpenAI API error")
+
+    content = response.choices[0].message.content
+    if not content or not content.strip():
+        raise HTTPException(status_code=502, detail="LLM did not return a reply")
+    return ChatResponse(reply=content)
 
 
 @app.post("/transfers/analyse", response_model=TransferAnalyseResponse)
