@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import RedisMock from 'ioredis-mock';
+import { logger } from '../lib/logger.js';
 
 // A single shared Redis stands in for the cluster every gateway node talks to.
 const sharedRedis = new RedisMock();
@@ -175,7 +176,7 @@ describe('rate-limit counters', () => {
 
   it('falls back to per-node counters when Redis errors instead of failing open', async () => {
     process.env['RATE_LIMIT_KEY_BUNDLE'] = '2/60';
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     const multi = vi.spyOn(sharedRedis, 'multi').mockImplementation(() => {
       throw new Error('connection refused');
     });

@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
+import { logger } from '../lib/logger.js';
 
 const insertedRows: Array<Record<string, unknown>> = [];
 const mockValues = vi.fn(async (row: Record<string, unknown>) => {
@@ -135,7 +136,7 @@ describe('recordAuditEvent', () => {
   });
 
   it('never lets a failed audit write break the action it observes', async () => {
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
     mockInsert.mockImplementation(() => {
       throw new Error('audit table unavailable');
     });
@@ -143,7 +144,10 @@ describe('recordAuditEvent', () => {
     await expect(
       recordAuditEvent({ action: 'device_revoked', actorUserId: 'user-alice' }),
     ).resolves.toBeUndefined();
-    expect(error).toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({ module: 'audit', action: 'device_revoked' }),
+      'failed to record audit event',
+    );
 
     error.mockRestore();
   });

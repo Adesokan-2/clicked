@@ -19,6 +19,7 @@ import { db } from '../db/index.js';
 import { devicePrekeys } from '../db/schema.js';
 import { getSocketServer } from '../lib/socket.js';
 import { redis } from '../lib/redis.js';
+import { logger } from '../lib/logger.js';
 
 /**
  * Signal when a device's unconsumed one-time prekey count drops below this.
@@ -130,7 +131,7 @@ export async function signalPrekeysLowIfNeeded(deviceId: string, remaining: numb
       threshold: PREKEY_LOW_THRESHOLD,
     });
   } catch (err) {
-    console.warn('[prekeyLowSignal] failed for device', deviceId, (err as Error).message);
+    logger.warn({ module: 'prekey-low-signal', deviceId, err }, 'prekey low signal failed');
   }
 }
 

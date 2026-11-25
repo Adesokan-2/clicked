@@ -1,4 +1,5 @@
 import type { Redis } from 'ioredis';
+import { logger } from '../lib/logger.js';
 
 export interface DeviceDeliveryPayload {
   messageId: string;
@@ -19,7 +20,7 @@ export async function publishToDevice(
   try {
     await redis.publish(deviceChannel(deviceId), JSON.stringify(payload));
   } catch (err) {
-    console.warn('[deviceDelivery] publish failed for device', deviceId, (err as Error).message);
+    logger.warn({ module: 'device-delivery', deviceId, err }, 'publish failed for device');
   }
 }
 
@@ -49,7 +50,7 @@ export class GatewayDeviceSubscriber {
     });
 
     this.sub.on('error', (err: Error) => {
-      console.warn('[deviceDelivery] subscriber error:', err.message);
+      logger.warn({ module: 'device-delivery', err }, 'subscriber error');
     });
   }
 
@@ -62,11 +63,7 @@ export class GatewayDeviceSubscriber {
       await this.sub.subscribe(deviceChannel(deviceId));
     } catch (err) {
       this.handlers.delete(deviceId);
-      console.warn(
-        '[deviceDelivery] subscribe failed for device',
-        deviceId,
-        (err as Error).message,
-      );
+      logger.warn({ module: 'device-delivery', deviceId, err }, 'subscribe failed for device');
     }
   }
 

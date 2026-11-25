@@ -11,7 +11,7 @@ appear in a log line.
 - [Levels, and how level is set per environment](#levels-and-how-level-is-set-per-environment)
 - [The no-content rule](#the-no-content-rule)
 - [Standard correlation fields](#standard-correlation-fields)
-- [Current adoption: `console.*` is still the norm](#current-adoption-console-is-still-the-norm)
+- [Adoption and enforcement](#adoption-and-enforcement)
 
 ## Configuration
 
@@ -58,8 +58,8 @@ export const logger = pino({
 
 There is no per-request or per-socket child-logger factory defined yet — see
 [Standard correlation fields](#standard-correlation-fields) for what's available to attach
-manually, and [Current adoption](#current-adoption-console-is-still-the-norm) for why this
-matters less today than it will once call sites migrate to it.
+manually, and [Adoption and enforcement](#adoption-and-enforcement) for the conventions
+existing call sites follow.
 
 ## Levels, and how level is set per environment
 
@@ -156,29 +156,27 @@ relevant subset by hand at each call site (as the redact-list field names alread
 you should for `payload`/`envelopes`/`ciphertext`/`plaintext`), following the pattern
 shown in [the no-content rule](#the-no-content-rule) above.
 
-## Current adoption: `console.*` is still the norm
+## Adoption and enforcement
 
-**`lib/logger.ts` has no import sites anywhere else in `apps/backend/src` today.** Every
-current log line in the backend — startup/shutdown messages in `index.ts`, the GC job
-services (`deviceGc.ts`, `envelopeGc.ts`, `fileCleanup.ts`), the socket dispatcher and
-messaging handlers, push notification hygiene, presence, backpressure, rate limiting, and
-so on — goes through bare `console.log`/`console.warn`/`console.error`/`console.debug`
-instead (roughly 60 call sites across the backend as of this writing). Even
-`services/stellarListener.ts`, whose own doc comment says it "logs errors via the standard
-backend logger," actually defaults its optional `log` dependency to a small hand-rolled
-`consoleLogger` wrapper around `console.*`, not to `lib/logger.ts`.
+Every non-test log line in `apps/backend/src` goes through `lib/logger.ts`. ESLint's
+`no-console` rule is an error for `apps/backend/src` and is switched off only for test
+files (`*.test.ts`, `*.spec.ts`, `__tests__/`), so a new `console.*` call fails `pnpm lint`.
+The one CLI script, `src/scripts/check-ciphertext-invariant.mjs`, prints its human-readable
+result with `process.stdout.write` / `process.stderr.write` rather than through the logger.
 
-Practical implications:
+Conventions the existing call sites follow:
 
-- **None of the level control, redaction backstop, or `service` base field described
-  above currently applies to the backend's actual log output** — `console.*` calls bypass
-  all of it. `LOG_LEVEL` has no effect on anything printed via `console.log`.
-- **New code should use `lib/logger.ts`, not add more `console.*` calls.** The existing
-  ~60 call sites are the migration backlog, not the target state — don't grow that number.
-  When you're already touching a file that logs via `console.*`, prefer converting the
-  lines you touch to `logger` rather than leaving new logic logging through the old path.
-- When you do add a `logger.*` call, follow the [no-content rule](#the-no-content-rule)
-  and attach the [correlation fields](#standard-correlation-fields) relevant to that
-  call site, the same way the codebase's existing `console.*` calls already do at their
-  best (e.g. `dispatcher.ts`'s `{ deviceId, eventId, type }` shape) — the goal is to bring
-  that same discipline under the structured logger, not to reinvent it.
+- **Message plus fields.** The message is a short fixed string; ids, counts and other
+  variables go in the fields object, never interpolated into the message:
+  `logger.info({ module: 'device-revocation', deviceId }, 'device revoked mid-session')`.
+- **`module`.** Each call names its area (`'push'`, `'device-gc'`, `'dispatcher'`, ...),
+  replacing the old `[push]`-style message prefixes, so one subsystem can be filtered
+  with a single field.
+- **Errors under `err`.** Pass the caught error as `{ err }` so pino's error serializer
+  records its message and stack.
+- **No capability URLs.** Push subscription endpoints are capability URLs, and the Redis
+  URL can carry credentials: log only their host with `urlHost()` from `lib/logger.ts`.
+  Do not pass a `web-push` error as `err`, because `WebPushError` carries the full
+  `endpoint`.
+- **`services/stellarListener.ts`** keeps its injectable `log` dependency for tests, but
+  its default now forwards to `logger` with `module: 'stellar-listener'`.

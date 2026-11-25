@@ -55,6 +55,7 @@ import {
   joinUserRoom,
   rebuildRoomsAfterRestart,
 } from './services/roomManager.js';
+import { logger, urlHost } from './lib/logger.js';
 
 dotenv.config();
 
@@ -132,7 +133,7 @@ io.use(socketAuthMiddleware);
 io.on('connection', async (socket: AuthSocket) => {
   const userId = socket.auth!.userId;
   const deviceId = socket.auth!.deviceId;
-  console.log('User connected:', userId, socket.id);
+  logger.info({ module: 'socket', userId, deviceId, socketId: socket.id }, 'user connected');
 
   socket.data['userId'] = userId;
   socket.data['deviceId'] = deviceId;
@@ -267,7 +268,7 @@ io.on('connection', async (socket: AuthSocket) => {
         socket.emit('device_envelope', payload);
       })
       .catch((err: Error) => {
-        console.warn('[deviceDelivery] failed to subscribe device', deviceId, err.message);
+        logger.warn({ module: 'device-delivery', deviceId, err }, 'failed to subscribe device');
       });
   }
 
@@ -275,7 +276,7 @@ io.on('connection', async (socket: AuthSocket) => {
   registerForBackpressure(socket);
 
   socket.on('disconnect', async (reason: string) => {
-    console.log('User disconnected:', userId, reason);
+    logger.info({ module: 'socket', userId, deviceId, reason }, 'user disconnected');
     connectedSockets.dec();
 
     clearHeartbeatTimer(socket.id);
@@ -391,31 +392,36 @@ async function attachRedisAdapter(): Promise<void> {
   const subClient = pubClient.duplicate();
 
   pubClient.on('error', (err) => {
-    console.warn('[socket.io] Redis pub client error — degrading to local adapter:', err.message);
+    logger.warn(
+      { module: 'socket.io', client: 'pub', err },
+      'Redis client error, degrading to local adapter',
+    );
   });
   subClient.on('error', (err) => {
-    console.warn('[socket.io] Redis sub client error — degrading to local adapter:', err.message);
+    logger.warn(
+      { module: 'socket.io', client: 'sub', err },
+      'Redis client error, degrading to local adapter',
+    );
   });
 
   try {
     await Promise.all([pubClient.connect(), subClient.connect()]);
     io.adapter(createAdapter(pubClient, subClient));
-    console.log(`[socket.io] Redis adapter attached (${redisUrl})`);
+    logger.info({ module: 'socket.io', redisHost: urlHost(redisUrl) }, 'Redis adapter attached');
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn(`[socket.io] Redis unavailable (${message}) — running in single-instance mode`);
+    logger.warn({ module: 'socket.io', err }, 'Redis unavailable, running in single-instance mode');
     await Promise.allSettled([pubClient.quit(), subClient.quit()]);
   } finally {
     if (appRedis) {
       try {
         await reconcileBoot(io, appRedis);
-        console.log('[presence] Boot reconciliation complete');
+        logger.info({ module: 'presence' }, 'boot reconciliation complete');
 
         // Rebuild rooms after restart for optimized fan-out
         await rebuildRoomsAfterRestart(io);
-        console.log('[roomManager] Rooms rebuilt after restart');
+        logger.info({ module: 'room-manager' }, 'rooms rebuilt after restart');
       } catch (err) {
-        console.warn('[presence] Boot reconciliation failed:', err);
+        logger.warn({ module: 'presence', err }, 'boot reconciliation failed');
       }
     }
   }
@@ -423,7 +429,7 @@ async function attachRedisAdapter(): Promise<void> {
 
 const PORT = process.env['PORT'] ?? 3001;
 httpServer.listen(PORT, () => {
-  console.log(`Backend server running on port ${PORT}`);
+  logger.info({ port: PORT }, 'backend server running');
 });
 
 // Attach the Redis adapter after listen() so the API is reachable even if
@@ -469,8 +475,9 @@ if (stellarRpcUrl && tokenTransferContractId) {
     }),
   });
 } else {
-  console.log(
-    '[stellar-listener] STELLAR_RPC_URL or TOKEN_TRANSFER_CONTRACT_ID unset; listener disabled.',
+  logger.info(
+    { module: 'stellar-listener' },
+    'STELLAR_RPC_URL or TOKEN_TRANSFER_CONTRACT_ID unset, listener disabled',
   );
 }
 

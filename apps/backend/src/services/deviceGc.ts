@@ -18,6 +18,7 @@
 import { and, eq, lt, or, isNull, isNotNull } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { devicePrekeys, mlsKeyPackages, devices } from '../db/schema.js';
+import { logger } from '../lib/logger.js';
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
@@ -126,12 +127,13 @@ export function startDeviceGcJob(): void {
         const keyPackages = await runMlsKeyPackageGcPass();
         const flagged = await runDeviceStaleFlagPass();
         if (prekeys || keyPackages || flagged) {
-          console.log(
-            `[device-gc] pruned ${prekeys} prekey(s), ${keyPackages} MLS key package(s), flagged ${flagged} stale device(s)`,
+          logger.info(
+            { module: 'device-gc', prekeys, keyPackages, flagged },
+            'device gc pass complete',
           );
         }
       } catch (err) {
-        console.error('[device-gc] job error:', err);
+        logger.error({ module: 'device-gc', err }, 'device gc job failed');
       }
     })();
   }, getGcIntervalMs());

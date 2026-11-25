@@ -10,6 +10,7 @@ import {
   refreshPresenceSocket,
   unregisterPresenceSocket,
 } from './presence.js';
+import { logger } from '../lib/logger.js';
 
 const HEARTBEAT_TIMEOUT_MS = 90_000;
 const LAST_SEEN_THROTTLE_MS = 30_000;
@@ -29,7 +30,7 @@ export function startHeartbeatTimer(
     clearTimeout(timers.get(socket.id));
     const timer = setTimeout(async () => {
       timers.delete(socket.id);
-      console.log(`Heartbeat timeout for device ${deviceId} (user ${userId})`);
+      logger.info({ module: 'heartbeat', deviceId, userId }, 'heartbeat timeout');
 
       let fullyOffline = true;
       if (redis) {

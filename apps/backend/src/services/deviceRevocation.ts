@@ -2,6 +2,7 @@ import type { Redis } from 'ioredis';
 import { getSocketServer } from '../lib/socket.js';
 import type { AuthSocket } from '../middleware/socketAuth.js';
 import { setOffline, getDeviceSocketIds, isDeviceConnectedInRegistry } from './presence.js';
+import { logger } from '../lib/logger.js';
 
 // Revocation flags are checked on the hot path (every incoming socket event,
 // via index.ts's socket.use middleware), so they stay in-process rather than
@@ -43,7 +44,7 @@ export async function startDeviceRevocationListener(
     const deviceId = channel.replace('device_revoked:', '');
     markDeviceRevoked(deviceId);
 
-    console.log(`Device revoked mid-session: ${deviceId}`);
+    logger.info({ module: 'device-revocation', deviceId }, 'device revoked mid-session');
 
     if (!appRedis) return;
 

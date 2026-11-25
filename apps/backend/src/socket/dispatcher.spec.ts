@@ -5,6 +5,7 @@ import type { Server as SocketIOServer } from 'socket.io';
 import { EventDispatcher } from './dispatcher.js';
 import type { AuthSocket } from '../middleware/socketAuth.js';
 import { createEnvelope } from '../lib/eventEnvelope.js';
+import { logger } from '../lib/logger.js';
 
 describe('EventDispatcher with Replay Protection', () => {
   let redis: Redis;
@@ -195,27 +196,28 @@ describe('EventDispatcher with Replay Protection', () => {
     });
 
     it('should log replay event detection', async () => {
-      const consoleDebugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+      const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => {});
 
       const eventId = 'event-123';
       const envelope = createEnvelope('join_room', { message: 'test' }, eventId);
 
       // First occurrence
       await (mockSocket as any).dispatchHandler(envelope);
-      consoleDebugSpy.mockClear();
+      debugSpy.mockClear();
 
       // Second occurrence (replay) — should log
       await (mockSocket as any).dispatchHandler(envelope);
 
-      expect(consoleDebugSpy).toHaveBeenCalledWith(
-        '[replay-protection] Dropping replay event',
+      expect(debugSpy).toHaveBeenCalledWith(
         expect.objectContaining({
+          module: 'replay-protection',
           deviceId: 'test-device',
           eventId,
         }),
+        'dropping replay event',
       );
 
-      consoleDebugSpy.mockRestore();
+      debugSpy.mockRestore();
     });
 
     it('should emit dispatch_ack with duplicate flag for replays', async () => {

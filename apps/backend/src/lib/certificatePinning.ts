@@ -14,6 +14,8 @@
  * client must be able to bootstrap its pin set before it holds a token.
  */
 
+import { logger } from './logger.js';
+
 /** `sha256/` + base64 of a 32-byte digest (44 chars incl. padding). */
 const PIN_PATTERN = /^sha256\/[A-Za-z0-9+/]{43}=$/;
 
@@ -69,7 +71,7 @@ export function getPinningPolicy(source: NodeJS.ProcessEnv = process.env): Pinni
   const { pins: backupPins, invalid: invalidBackup } = parsePins(source['TLS_BACKUP_SPKI_SHA256']);
 
   for (const bad of [...invalid, ...invalidBackup]) {
-    console.warn(`[security] ignoring malformed SPKI pin: ${bad}`);
+    logger.warn({ module: 'security', pin: bad }, 'ignoring malformed SPKI pin');
   }
 
   const rawMaxAge = source['TLS_PIN_MAX_AGE_SECONDS'];
