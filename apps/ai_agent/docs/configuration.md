@@ -3,12 +3,10 @@
 Every setting the `ai_agent` service reads, what happens when one is missing, and
 which settings are not configurable at all.
 
-The headline is short, and it is deliberately stated up front because it is the
-opposite of what most services look like: **the service reads exactly one
-environment variable, `OPENAI_API_KEY`.** Everything else — the model, the
-Weaviate connection, the bind host and port — is hardcoded in
-[`apps/ai_agent/main.py`](../main.py). Changing any of them is a code change, not
-a deployment setting.
+The service reads `OPENAI_API_KEY` per request and captures `OPENAI_CHAT_MODEL`
+and `OPENAI_EMBEDDING_MODEL` once at startup. Model changes require a process
+restart. The Weaviate connection and direct-execution bind host and port remain
+hardcoded in [`apps/ai_agent/main.py`](../main.py).
 
 ---
 
@@ -17,6 +15,8 @@ a deployment setting.
 | Variable         | Required | Default | Read at                                                                | Effect when unset                                                                                                                                       |
 | ---------------- | -------- | ------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `OPENAI_API_KEY` | Yes\*    | _none_  | Per request, inside `_openai_client()` — not at import and not at boot | The process still starts and `/health` still returns 200; every OpenAI-backed endpoint returns 500. See [§3](#3-startup-and-missing-api-key-behaviour). |
+| `OPENAI_CHAT_MODEL` | No | `gpt-4o-mini` | Module import at startup | Uses the default for all three chat-completion endpoints. |
+| `OPENAI_EMBEDDING_MODEL` | No | `text-embedding-3-small` | Module import at startup | Uses the default for indexing and search. |
 
 \* Required for the service to do anything useful. It is _not_ required for the
 process to start, and that distinction is the single most important thing in this
@@ -28,6 +28,8 @@ It is the same key the backend uses — it is declared once in the repo-root
 ```bash
 # AI Service
 OPENAI_API_KEY=
+OPENAI_CHAT_MODEL=gpt-4o-mini
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 ```
 
 There is no `.env` loading in `main.py` — no `python-dotenv`, no
@@ -41,7 +43,7 @@ Worth stating explicitly, because their absence is easy to mistake for a bug:
 
 | Variable                                           | Status                                                                                                                                          |
 | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OPENAI_MODEL` (or any model-selection variable)   | Not read. Models are hardcoded — see [§2](#2-hardcoded-settings).                                                                               |
+| `OPENAI_MODEL` | Not read. Use `OPENAI_CHAT_MODEL` and `OPENAI_EMBEDDING_MODEL` instead. |
 | `WEAVIATE_URL` / `WEAVIATE_HOST` / `WEAVIATE_PORT` | Not read. The connection is `weaviate.connect_to_local()` — see [§4](#4-weaviate-connection).                                                   |
 | `WEAVIATE_API_KEY`                                 | Not read. The client connects unauthenticated.                                                                                                  |
 | `HOST` / `PORT`                                    | Not read. See [§2](#2-hardcoded-settings).                                                                                                      |
@@ -55,8 +57,6 @@ Setting any of these has no effect on this service.
 
 | Setting              | Value                                                  | Where                                                |
 | -------------------- | ------------------------------------------------------ | ---------------------------------------------------- |
-| Chat model           | `gpt-4o-mini`                                          | `chat`, `analyse_transfer`, `summarise_proposal`     |
-| Embedding model      | `text-embedding-3-small`                               | `index_message`, `search_messages`                   |
 | Bind host            | `0.0.0.0`                                              | `uvicorn.run(...)` under `if __name__ == "__main__"` |
 | Bind port            | `8000`                                                 | same                                                 |
 | Weaviate collection  | `Message`                                              | `index_message`, `search_messages`                   |
@@ -65,11 +65,6 @@ Setting any of these has no effect on this service.
 | Request timeouts     | 30 s for `/chat`, 10 s for the two JSON-mode endpoints | passed per call as `timeout=`                        |
 | System prompt        | `_SYSTEM_PROMPT`                                       | module level                                         |
 
-Two consequences:
-
-- **Model changes require a code change and a deploy.** There is no way to move
-  to a different model, or to run two environments on different models, through
-  configuration.
 - **The host and port literals only apply to `python main.py`.** Running the
   module directly executes the `__main__` block and binds `0.0.0.0:8000`. Under
   any ASGI server invoked against the app object — which is how the repo README
@@ -275,7 +270,7 @@ CI runs ruff, ruff format, mypy, and pytest with coverage via
 - [ ] If `/search` or `/index/message` are used: a Weaviate instance is running and reachable at the client's local defaults **from the ai_agent process's own network namespace**.
 - [ ] Bind host and port set on the server command line, not expected from env.
 - [ ] Monitoring watches the 5xx rate on `/chat` and the 503 rate on `/search`, not just liveness.
-- [ ] Model choice reviewed as a code change — `gpt-4o-mini` and `text-embedding-3-small` are compiled in.
+- [ ] Model variables are set before startup; restart after changes and reindex existing messages if the embedding model changes.
 
 ---
 

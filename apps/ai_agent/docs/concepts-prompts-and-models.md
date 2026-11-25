@@ -14,7 +14,7 @@ Everything here reflects [apps/ai_agent/main.py](../main.py) as implemented. Pro
 | `POST /index/message`  | `text-embedding-3-small` | embedding       | n/a       | none    |
 | `GET /search`          | `text-embedding-3-small` | embedding       | n/a       | none    |
 
-Model identifiers are **hardcoded string literals at each call site**. There is no configuration object, no environment variable, and no central constant. Changing a model means editing `main.py`.
+The table shows the defaults. `OPENAI_CHAT_MODEL` selects the model for all three chat-completion endpoints; `OPENAI_EMBEDDING_MODEL` selects the model for indexing and search. Both variables are read once into module-level constants at startup. Restart the service after changing them. See the [configuration reference](configuration.md#1-environment-variables).
 
 `GET /health` involves no model at all.
 
