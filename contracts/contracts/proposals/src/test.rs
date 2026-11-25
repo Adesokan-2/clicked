@@ -101,7 +101,7 @@ fn setup(
 
     let treasury_addr = env.register(group_treasury::GroupTreasuryContract, ());
     let treasury = group_treasury::GroupTreasuryContractClient::new(env, &treasury_addr);
-    treasury.initialize(&treasury_admin, &token_id, &1);
+    treasury.initialize(&treasury_admin, &1);
     treasury.add_member(&treasury_member);
 
     // Deposit into treasury so `execute_withdraw` has something to withdraw.

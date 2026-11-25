@@ -63,7 +63,7 @@ fn setup(env: &Env) -> (Address, Address, Address, Address) {
 
     let contract_id = env.register(GroupTreasuryContract, ());
     let client = GroupTreasuryContractClient::new(env, &contract_id);
-    client.initialize(&admin, &token_id, &1);
+    client.initialize(&admin, &1);
 
     (contract_id, token_id, admin, member)
 }
@@ -71,19 +71,25 @@ fn setup(env: &Env) -> (Address, Address, Address, Address) {
 #[test]
 fn test_initialize() {
     let env = Env::default();
-    let (contract_id, token_id, _admin, _member) = setup(&env);
+    let admin = Address::generate(&env);
+    let contract_id = env.register(GroupTreasuryContract, ());
     let client = GroupTreasuryContractClient::new(&env, &contract_id);
-    assert_eq!(client.balance(&token_id), 0);
+
+    // Initialization needs no token contract to exist.
+    client.initialize(&admin, &2);
+    assert_eq!(client.get_threshold(), 2);
+    assert_eq!(client.get_members().len(), 0);
+    assert_eq!(client.balance(&Address::generate(&env)), 0);
 }
 
 #[test]
 #[should_panic(expected = "already initialized")]
 fn test_double_initialize_panics() {
     let env = Env::default();
-    let (contract_id, token_id, _admin, _member) = setup(&env);
+    let (contract_id, _token_id, _admin, _member) = setup(&env);
     let client = GroupTreasuryContractClient::new(&env, &contract_id);
     let other = Address::generate(&env);
-    client.initialize(&other, &token_id, &1);
+    client.initialize(&other, &1);
 }
 
 #[test]
@@ -164,7 +170,7 @@ fn test_non_admin_cannot_withdraw() {
 
     let contract_id = env.register(GroupTreasuryContract, ());
     let client = GroupTreasuryContractClient::new(&env, &contract_id);
-    client.initialize(&admin, &token_id, &1);
+    client.initialize(&admin, &1);
 
     let recipient = Address::generate(&env);
     // admin.require_auth() inside withdraw will fail — no auth context set up.
@@ -201,7 +207,7 @@ fn test_multi_token_deposits_tracked_separately() {
 
     let contract_id = env.register(GroupTreasuryContract, ());
     let client = GroupTreasuryContractClient::new(&env, &contract_id);
-    client.initialize(&admin, &xlm_id, &1); // initialize with XLM for compatibility
+    client.initialize(&admin, &1);
 
     // Deposit XLM and USDC
     client.deposit(&member, &xlm_id, &40_000);
@@ -263,10 +269,9 @@ fn test_non_admin_cannot_add_member() {
     let member = Address::generate(&env);
     let non_admin = Address::generate(&env);
 
-    let token_id = env.register(mock_token::MockToken, ());
     let contract_id = env.register(GroupTreasuryContract, ());
     let client = GroupTreasuryContractClient::new(&env, &contract_id);
-    client.initialize(&admin, &token_id, &1);
+    client.initialize(&admin, &1);
 
     // non_admin tries to add member - should fail due to auth
     client.add_member(&member);
@@ -347,11 +352,10 @@ fn test_get_threshold_returns_configured_value() {
     let env = Env::default();
 
     let admin = Address::generate(&env);
-    let token_id = env.register(mock_token::MockToken, ());
 
     let contract_id = env.register(GroupTreasuryContract, ());
     let client = GroupTreasuryContractClient::new(&env, &contract_id);
-    client.initialize(&admin, &token_id, &3);
+    client.initialize(&admin, &3);
 
     assert_eq!(client.get_threshold(), 3);
 }
@@ -362,11 +366,10 @@ fn test_initialize_zero_threshold_panics() {
     let env = Env::default();
 
     let admin = Address::generate(&env);
-    let token_id = env.register(mock_token::MockToken, ());
 
     let contract_id = env.register(GroupTreasuryContract, ());
     let client = GroupTreasuryContractClient::new(&env, &contract_id);
-    client.initialize(&admin, &token_id, &0);
+    client.initialize(&admin, &0);
 }
 
 // ── Voting Tests (approve_withdraw / reject_withdraw) ──────────────────────────
@@ -384,7 +387,7 @@ fn voting_setup(
     let token_id = env.register(mock_token::MockToken, ());
     let contract_id = env.register(GroupTreasuryContract, ());
     let client = GroupTreasuryContractClient::new(env, &contract_id);
-    client.initialize(&admin, &token_id, &threshold);
+    client.initialize(&admin, &threshold);
 
     let mut members = soroban_sdk::Vec::new(env);
     for _ in 0..num_members {
@@ -586,7 +589,7 @@ fn test_vote_without_auth_panics() {
     let client = GroupTreasuryContractClient::new(&env, &contract_id);
 
     env.mock_all_auths();
-    client.initialize(&admin, &token_id, &1);
+    client.initialize(&admin, &1);
     client.add_member(&member);
     let recipient = Address::generate(&env);
     seed_proposal(&env, &contract_id, 0, &recipient, &token_id, 1_000, 10_000);

@@ -2,16 +2,16 @@
 
 You will deploy the `group_treasury` contract to Stellar testnet, add three members with an approval threshold of two, deposit a test asset, propose a withdrawal, approve it, and see what happens when you do the wrong thing. You will finish by pointing the app at the deployed contract.
 
-Every command and output below was run on testnet on 2026-10-20 with `stellar 25.2.0`, `cargo 1.94.0` and `soroban-sdk 22.0.0`. Addresses, contract IDs and transaction hashes will differ in your run. Long transaction URLs and event payloads are shortened with `…`.
+The original commands and outputs below were run on testnet on 2026-10-20 with `stellar 25.2.0`, `cargo 1.94.0` and `soroban-sdk 22.0.0`. Initialization examples have since been updated for #660 to omit the unused token argument; those edits have not been rerun on testnet. Addresses, contract IDs and transaction hashes will differ in your run. Long transaction URLs and event payloads are shortened with `…`.
 
 ## Read this first: what differs from a clean run
 
-Running this tutorial against the repository as it stands surfaced three problems in `scripts/deploy_group_treasury.sh` and one gap in the contract. Each is handled in the step where it appears, and each is a fix worth making in the repo:
+The original tutorial run surfaced three problems in `scripts/deploy_group_treasury.sh` and one gap in the contract. Each is handled in the step where it appears, and each is a fix worth making in the repo:
 
 | #   | Where                      | Problem                                                                                                                                                                                  |
 | --- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | script, build step         | `cargo build --target wasm32-unknown-unknown` with a current Rust toolchain emits WebAssembly that testnet rejects (`reference-types not enabled`). Build with `stellar contract build`. |
-| 2   | script, initialise step    | `initialize` takes a required `--threshold`; the script does not pass it, so it fails with `Missing required argument 'threshold'`.                                                      |
+| 2   | script, initialise step    | Fixed in #660: the script now requires `THRESHOLD` and passes `--threshold`; initialization no longer accepts a token.                                                      |
 | 3   | script, admin address step | `stellar keys public-key --secret-key …` is not accepted by `stellar 25.2.0` (`unexpected argument '--secret-key'`).                                                                     |
 | 4   | contract                   | There is **no execute entrypoint**. Reaching the threshold marks a proposal `Passed`; nothing moves funds. See [Step 8](#step-8-see-what-passed-does-and-does-not-do).                   |
 
@@ -97,7 +97,7 @@ The output is `target/wasm32v1-none/release/group_treasury.wasm`.
 To see problem 1 for yourself, run the script with the identity's secret:
 
 ```bash
-DEPLOYER_SECRET=$(stellar keys secret tut-admin) TOKEN_CONTRACT_ID=$TOKEN ./scripts/deploy_group_treasury.sh
+DEPLOYER_SECRET=$(stellar keys secret tut-admin) THRESHOLD=2 ./scripts/deploy_group_treasury.sh
 ```
 
 ```
@@ -142,10 +142,10 @@ inv() { local src=$1; shift; stellar contract invoke --network testnet --source 
 
 ## Step 5: initialize with a threshold of two
 
-First, the script's `initialize` call (problem 2):
+A call without a threshold still fails (the script now validates `THRESHOLD` before deployment):
 
 ```bash
-inv tut-admin initialize --admin $ADMIN --token $TOKEN
+inv tut-admin initialize --admin $ADMIN
 ```
 
 ```
@@ -155,7 +155,7 @@ inv tut-admin initialize --admin $ADMIN --token $TOKEN
 Add the threshold:
 
 ```bash
-inv tut-admin initialize --admin $ADMIN --token $TOKEN --threshold 2
+inv tut-admin initialize --admin $ADMIN --threshold 2
 inv tut-admin get_threshold
 ```
 

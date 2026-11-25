@@ -33,7 +33,7 @@ NETWORK=futurenet DEPLOYER_SECRET=S... TOKEN_CONTRACT_ID=C... ./scripts/deploy_t
 Deployments to `mainnet` or `public` are blocked unless you also set `CONFIRM_MAINNET=yes`:
 
 ```bash
-NETWORK=mainnet CONFIRM_MAINNET=yes DEPLOYER_SECRET=S... TOKEN_CONTRACT_ID=C... \
+NETWORK=mainnet CONFIRM_MAINNET=yes DEPLOYER_SECRET=S... THRESHOLD=2 \
   ./scripts/deploy_group_treasury.sh
 ```
 

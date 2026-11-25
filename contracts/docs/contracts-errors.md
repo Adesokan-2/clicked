@@ -137,7 +137,7 @@ fn require_admin(env: &Env) -> Address {
 }
 ```
 
-### `initialize(env, admin, _token, threshold)`
+### `initialize(env, admin, threshold)`
 
 | Trigger | Kind | Message |
 | ------- | ---- | ------- |

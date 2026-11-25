@@ -9,11 +9,11 @@
 # Prerequisites:
 #   - stellar CLI installed  (https://developers.stellar.org/docs/tools/stellar-cli)
 #   - DEPLOYER_SECRET env var set (Stellar secret key of the deployer/admin account)
-#   - TOKEN_CONTRACT_ID env var set (contract ID of the SEP-41 token to hold)
+#   - THRESHOLD env var set (required approvals, an integer from 1 to 4294967295)
 #
 # Usage:
-#   DEPLOYER_SECRET=S... TOKEN_CONTRACT_ID=C... ./scripts/deploy_group_treasury.sh
-#   NETWORK=futurenet DEPLOYER_SECRET=S... TOKEN_CONTRACT_ID=C... ./scripts/deploy_group_treasury.sh
+#   DEPLOYER_SECRET=S... THRESHOLD=2 ./scripts/deploy_group_treasury.sh
+#   NETWORK=futurenet DEPLOYER_SECRET=S... THRESHOLD=2 ./scripts/deploy_group_treasury.sh
 
 set -euo pipefail
 
@@ -30,8 +30,8 @@ if [[ -z "${DEPLOYER_SECRET:-}" ]]; then
   exit 1
 fi
 
-if [[ -z "${TOKEN_CONTRACT_ID:-}" ]]; then
-  echo "Error: TOKEN_CONTRACT_ID is not set" >&2
+if [[ ! "${THRESHOLD:-}" =~ ^[1-9][0-9]{0,9}$ ]] || (( THRESHOLD > 4294967295 )); then
+  echo "Error: THRESHOLD must be an integer from 1 to 4294967295" >&2
   exit 1
 fi
 
@@ -65,12 +65,12 @@ stellar contract invoke \
   --id "$CONTRACT_ID" \
   -- initialize \
   --admin "$ADMIN_PUBLIC" \
-  --token "$TOKEN_CONTRACT_ID"
+  --threshold "$THRESHOLD"
 
 echo ""
 echo "group_treasury deployed and initialised"
 echo "  Contract ID : $CONTRACT_ID"
-echo "  Token       : $TOKEN_CONTRACT_ID"
+echo "  Threshold   : $THRESHOLD"
 echo "  Admin       : $ADMIN_PUBLIC"
 echo ""
 echo "Add to your .env:"

@@ -119,19 +119,23 @@ deadline has also passed.
 One-time initialization. Sets the admin, the approval threshold, and sets up the empty
 balances map and members list.
 
+**API change (#660):** the unused `_token` parameter has been removed. Call generated
+clients with `initialize(&admin, &threshold)` and the CLI with
+`initialize --admin <Address> --threshold <u32>`. Regenerate clients against the new
+contract specification; old callers supplying a token must be updated. There is no
+storage migration: tokens remain selected separately for each deposit and withdrawal,
+and balances remain keyed by token. No default token or allowlist is introduced.
+
 **Full signature:**
 
 ```rust
-pub fn initialize(env: Env, admin: Address, _token: Address, threshold: u32)
+pub fn initialize(env: Env, admin: Address, threshold: u32)
 ```
 
 **Parameters:**
 
 - `admin: Address` — the address granted admin rights (`add_member`, `remove_member`,
   `withdraw`).
-- `_token: Address` — accepted but unused by the function body; the contract tracks
-  balances per-token in a `Map`, not a single fixed token, so this parameter has no effect
-  on behavior. Kept for interface/ABI compatibility.
 - `threshold: u32` — number of approvals a withdraw proposal needs to pass. Must be `>= 1`.
 
 **Authorization requirements:** **none.** `initialize` does not call `require_auth()` on
@@ -662,7 +666,7 @@ let token_id = env.register(mock_token::MockToken, ());
 let contract_id = env.register(GroupTreasuryContract, ());
 let client = GroupTreasuryContractClient::new(&env, &contract_id);
 
-client.initialize(&admin, &token_id, &2); // threshold = 2
+client.initialize(&admin, &2); // threshold = 2
 
 let member_a = Address::generate(&env);
 let member_b = Address::generate(&env);

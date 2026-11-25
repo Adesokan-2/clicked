@@ -167,7 +167,7 @@ Each contract has a bash script in `contracts/scripts/` that builds the wasm, up
 | Script                     | Required env vars                                                                                       |
 | -------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `deploy_token_transfer.sh` | `DEPLOYER_SECRET` (secret key `S...`), `TOKEN_CONTRACT_ID` (from 4.3)                                   |
-| `deploy_group_treasury.sh` | `DEPLOYER_SECRET`, `TOKEN_CONTRACT_ID` (from 4.3)                                                       |
+| `deploy_group_treasury.sh` | `DEPLOYER_SECRET`, `THRESHOLD` (1 to 4294967295)                                                       |
 | `deploy_proposals.sh`      | `DEPLOYER_SECRET`, `TREASURY_CONTRACT_ID` (deployed `group_treasury`), `MIN_VOTES` (approval threshold) |
 
 Example:
@@ -229,7 +229,7 @@ stellar contract invoke \
 | Contract         | `initialize` args                                           | Notes                                                     |
 | ---------------- | ----------------------------------------------------------- | --------------------------------------------------------- |
 | `token_transfer` | `--admin <Address>` `--token_contract <Address>`            | No auth required                                          |
-| `group_treasury` | `--admin <Address>` `--token <Address>` `--threshold <u32>` | `threshold` ≥ 1                                           |
+| `group_treasury` | `--admin <Address>` `--threshold <u32>` | `threshold` ≥ 1                                           |
 | `proposals`      | `--admin <Address>`                                         | `admin.require_auth()` — the `--source` must be the admin |
 
 Recommended deploy order:
