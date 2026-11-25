@@ -126,8 +126,7 @@ Surprising things observed directly in the code:
    `src/components/auth/AuthContext.tsx`, key order
    `['clicked_token', 'clicked.jwt', 'auth_token']` — different from the active
    provider's `['clicked.jwt', 'clicked_token', 'auth_token']`), and a third in
-   `src/lib/auth.tsx` (its own context/provider using only `auth_token`, with an
-   additional fallback to `process.env.NEXT_PUBLIC_AUTH_TOKEN`). These do not
+   `src/lib/auth.tsx` (its own context/provider using only `auth_token`). These do not
    share state and can diverge on the same origin.
 2. **No client-side signature or expiry verification.** All decode paths
    (`parseJwtPayload`, `parseJwtClaims`) only base64url-decode and JSON-parse the
@@ -141,6 +140,3 @@ Surprising things observed directly in the code:
 4. **Logout leaves crypto/IndexedDB state.** As noted in §6, device identity,
    realtime cursors, and IndexedDB E2EE material survive `signOut`, so a
    subsequent user on the same browser inherits the prior device's crypto state.
-5. **Env-var token fallback.** `src/lib/auth.tsx` seeds its token from
-   `process.env.NEXT_PUBLIC_AUTH_TOKEN` when no stored token exists, which bakes
-   a token source into the client bundle build.

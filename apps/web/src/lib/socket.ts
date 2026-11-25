@@ -7,16 +7,12 @@ import {
   runSocketSync,
   setResumeCursor,
 } from '@/lib/realtime';
+import { BACKEND_URL } from '@/lib/api';
 
 let socket: Socket | null = null;
 let activeToken: string | null = null;
 
-export function initSocket(
-  token: string,
-  serverUrl = process.env.NEXT_PUBLIC_BACKEND_URL ||
-    process.env.NEXT_PUBLIC_SOCKET_URL ||
-    'http://localhost:3001',
-): Socket {
+export function initSocket(token: string, serverUrl: string = BACKEND_URL): Socket {
   if (socket && activeToken === token) return socket;
   if (socket) closeSocket();
 
@@ -28,7 +24,6 @@ export function initSocket(
   });
 
   socket.on('connect', () => {
-    console.log('Socket connected');
     if (!socket) return;
     emitSocketEnvelope(socket, 'resume', { lastEventId: getResumeCursor(token) });
     void runSocketSync(socket, token);
@@ -69,7 +64,6 @@ export function initSocket(
     },
   );
 
-  socket.on('disconnect', () => console.log('Socket disconnected'));
   socket.on('error', (error) => console.error('Socket error:', error));
 
   return socket;

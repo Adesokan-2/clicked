@@ -4,6 +4,7 @@ import { useRef, useEffect } from 'react';
 import { useState } from 'react';
 import { useWallet } from '@/contexts/WalletContext';
 import { useRouter } from 'next/navigation';
+import { useToast } from '@/lib/useToast';
 
 function truncateAddress(address: string) {
   return `${address.slice(0, 4)}…${address.slice(-4)}`;
@@ -12,6 +13,7 @@ function truncateAddress(address: string) {
 export function WalletConnectButton() {
   const { publicKey, connect, disconnect } = useWallet();
   const router = useRouter();
+  const { success: toastSuccess, error: toastError } = useToast();
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -30,9 +32,14 @@ export function WalletConnectButton() {
   };
 
   const handleCopyAddress = async () => {
-    if (publicKey) {
+    if (!publicKey) return;
+
+    try {
       await navigator.clipboard.writeText(publicKey);
-      alert(`Address copied to clipboard ${publicKey}`);
+      toastSuccess('Address copied to clipboard');
+    } catch {
+      toastError('Could not copy address to clipboard');
+    } finally {
       setIsDropdownOpen(false);
     }
   };
