@@ -13,6 +13,9 @@ try:
 except ImportError:  # pragma: no cover - exercised when the dependency is absent
     OpenAI = None  # type: ignore[assignment, misc]
 
+OPENAI_CHAT_MODEL = os.environ.get("OPENAI_CHAT_MODEL", "gpt-4o-mini")
+OPENAI_EMBEDDING_MODEL = os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+
 app = FastAPI(title="AI Agent API")
 
 _SYSTEM_PROMPT = (
@@ -97,7 +100,7 @@ def health_check():
 def chat(request: ChatRequest):
     client = _openai_client()
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=OPENAI_CHAT_MODEL,
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": request.message},
@@ -128,7 +131,7 @@ def analyse_transfer(request: TransferAnalyseRequest):
         "confidence (float 0-1). Flag if suspicious patterns are detected."
     )
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=OPENAI_CHAT_MODEL,
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         timeout=10,
@@ -156,7 +159,7 @@ def summarise_proposal(request: ProposalSummariseRequest):
         '"low" for small, well-scoped, low-impact proposals; otherwise "medium".'
     )
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=OPENAI_CHAT_MODEL,
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
         timeout=10,
@@ -194,7 +197,7 @@ def index_message(request: IndexMessageRequest):
 
         # Get embedding via OpenAI
         openai_client = _openai_client()
-        res = openai_client.embeddings.create(input=request.content, model="text-embedding-3-small")
+        res = openai_client.embeddings.create(input=request.content, model=OPENAI_EMBEDDING_MODEL)
         vector = res.data[0].embedding
 
         # Upsert
@@ -243,7 +246,7 @@ def search_messages(q: str, conversationId: str):
 
         # Get embedding for query
         openai_client = _openai_client()
-        res = openai_client.embeddings.create(input=q, model="text-embedding-3-small")
+        res = openai_client.embeddings.create(input=q, model=OPENAI_EMBEDDING_MODEL)
         vector = res.data[0].embedding
 
         results = collection.query.near_vector(
