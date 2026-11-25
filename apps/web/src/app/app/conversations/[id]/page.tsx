@@ -32,6 +32,8 @@ import {
 import { generateEncryptedThumbnail } from '@/lib/thumbnail';
 import { EncryptedThumbnail } from '@/components/messaging/EncryptedThumbnail';
 import { UnavailableMessagePlaceholder } from '@/components/messaging/UnavailableMessagePlaceholder';
+import { useToast } from '@/lib/useToast';
+import { Modal } from '@/components/ui/Modal';
 
 type Wallet = {
   address?: string;
@@ -255,6 +257,90 @@ export default function ConversationPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [sendText, setSendText] = useState('');
   const [sending, setSending] = useState(false);
+  const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
+  const [hiddenMessageIds, setHiddenMessageIds] = useState<Set<string>>(() => new Set());
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const pendingDeleteIdRef = useRef<string | null>(null);
+
+  const { error: toastError } = useToast();
+
+  useEffect(() => {
+    if (!socket) return;
+
+    function handleSocketError(payload: unknown) {
+      if (!payload || typeof payload !== 'object') return;
+
+      const error = payload as {
+        event?: unknown;
+        message?: unknown;
+      };
+
+      if (error.event !== 'delete_message') return;
+
+      const messageId = pendingDeleteIdRef.current;
+      if (!messageId) return;
+
+      setHiddenMessageIds((prev) => {
+        const next = new Set(prev);
+        next.delete(messageId);
+        return next;
+      });
+
+      pendingDeleteIdRef.current = null;
+      setPendingDeleteId(null);
+
+      toastError(typeof error.message === 'string' ? error.message : 'Failed to delete message.');
+    }
+
+    function handleMessageDeleted(payload: unknown) {
+      if (!payload || typeof payload !== 'object') return;
+
+      const data = payload as { messageId?: unknown };
+
+      if (typeof data.messageId !== 'string') return;
+      if (data.messageId !== pendingDeleteIdRef.current) return;
+
+      pendingDeleteIdRef.current = null;
+      setPendingDeleteId(null);
+    }
+
+    socket.on('error', handleSocketError);
+    socket.on('message_deleted', handleMessageDeleted);
+
+    return () => {
+      socket.off('error', handleSocketError);
+      socket.off('message_deleted', handleMessageDeleted);
+    };
+  }, [socket, toastError]);
+
+  function confirmDeleteMessage() {
+    const messageId = deleteConfirmationId;
+
+    if (!messageId || !socket || pendingDeleteIdRef.current) return;
+
+    pendingDeleteIdRef.current = messageId;
+    setPendingDeleteId(messageId);
+
+    setHiddenMessageIds((prev) => new Set(prev).add(messageId));
+    setDeleteConfirmationId(null);
+
+    const eventId = emitSocketEnvelope(socket, 'delete_message', {
+      messageId,
+    });
+
+    if (!eventId) {
+      pendingDeleteIdRef.current = null;
+      setPendingDeleteId(null);
+
+      setHiddenMessageIds((prev) => {
+        const next = new Set(prev);
+        next.delete(messageId);
+        return next;
+      });
+
+      toastError('Could not send the delete request.');
+    }
+  }
 
   const { messages: inboundMessages } = useInboundPipeline({
     socket,
@@ -335,8 +421,10 @@ export default function ConversationPage() {
       }
     }
 
-    return merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-  }, [messages, inboundMessages]);
+    return merged
+      .filter((message) => !hiddenMessageIds.has(message.id))
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  }, [messages, inboundMessages, hiddenMessageIds]);
 
   const contacts = useMemo(() => {
     const members = conversation?.members ?? [];
@@ -759,6 +847,17 @@ export default function ConversationPage() {
                       <p className="mt-1 px-1 text-[10px] text-foreground/35">
                         {formatTime(message.createdAt)}
                       </p>
+                      {isSelf && (
+                        <button
+                          type="button"
+                          onClick={() => setDeleteConfirmationId(message.id)}
+                          disabled={pendingDeleteId !== null}
+                          className="mt-1 px-1 text-xs text-red-400 hover:text-red-300 disabled:opacity-40"
+                          aria-label="Delete message"
+                        >
+                          Delete
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -875,6 +974,35 @@ export default function ConversationPage() {
           </div>
         </aside>
       ) : null}
+
+      <Modal
+        isOpen={deleteConfirmationId !== null}
+        onClose={() => setDeleteConfirmationId(null)}
+        title="Delete message?"
+      >
+        <p className="text-sm text-foreground/70">
+          Are you sure you want to delete this message? This action cannot be undone.
+        </p>
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={() => setDeleteConfirmationId(null)}
+            className="rounded-lg px-4 py-2 text-sm text-foreground/70 hover:bg-foreground/5"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            onClick={confirmDeleteMessage}
+            disabled={pendingDeleteId !== null}
+            className="rounded-lg bg-red-500 px-4 py-2 text-sm text-white hover:bg-red-600 disabled:opacity-40"
+          >
+            Delete
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }
