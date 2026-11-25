@@ -37,6 +37,16 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+describe('unknown routes', () => {
+  it('returns a JSON 404 for an unknown path', async () => {
+    const res = await request(app).get('/this-route-does-not-exist');
+
+    expect(res.status).toBe(404);
+    expect(res.headers['content-type']).toMatch(/application\/json/);
+    expect(res.body).toEqual({ error: 'Not found' });
+  });
+});
+
 describe('GET /health', () => {
   it('returns the db status, node version, and app version', async () => {
     mockExecute.mockResolvedValue([]);

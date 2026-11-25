@@ -1,5 +1,5 @@
 import express from 'express';
-import type { Express } from 'express';
+import type { Express, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import { readFileSync } from 'node:fs';
@@ -25,6 +25,7 @@ import { registry } from './lib/metrics.js';
 import { trustProxyHops, isOriginAllowed, allowedOrigins } from './lib/transportSecurity.js';
 import { enforceTransportSecurity, enforceOriginPolicy } from './middleware/transportSecurity.js';
 import { rateLimit, ipIdentifier } from './middleware/rateLimit.js';
+import { logger } from './lib/logger.js';
 
 const packageJson = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
@@ -112,4 +113,28 @@ app.get('/metrics', async (_req, res) => {
 
 app.get('/me', requireAuth, (req, res) => {
   res.json({ user: (req as AuthRequest).auth });
+});
+
+// JSON 404 for any path not matched above. Must stay after every router.
+app.use((_req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// Error middleware. Errors that already carry a 4xx/5xx status (e.g. body-parser
+// 400/413 for malformed or oversized JSON) keep that status; everything else is
+// logged and returned as a generic 500 with no stack or message.
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  if (res.headersSent) {
+    return;
+  }
+  const status = (err as { status?: unknown; statusCode?: unknown } | null)?.status ??
+    (err as { statusCode?: unknown } | null)?.statusCode;
+  if (typeof status === 'number' && status >= 400 && status < 600) {
+    res.status(status).json({
+      error: status < 500 ? ((err as { expose?: boolean }).expose ? (err as Error).message : 'Bad request') : 'Internal server error',
+    });
+    return;
+  }
+  logger.error({ err }, 'unhandled request error');
+  res.status(500).json({ error: 'Internal server error' });
 });
