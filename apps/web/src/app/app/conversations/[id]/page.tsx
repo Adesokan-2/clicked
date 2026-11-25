@@ -13,7 +13,14 @@ import {
 import { useParams } from 'next/navigation';
 import { API_BASE_URL } from '@/lib/api';
 import { useSocket } from '@/hooks/useSocket';
-import { emitSocketEnvelope } from '@/lib/realtime';
+import { emitSocketEnvelope, getRealtimeDeviceId } from '@/lib/realtime';
+import {
+  createTypingSender,
+  formatTypingLabel,
+  resolveSelfUserId,
+  subscribeTypingReceiver,
+  type TypingSenderController,
+} from '@/lib/typingIndicator';
 import { useAuth } from '@/components/auth/useAuth';
 import { Avatar } from '@/components/ui/Avatar';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -253,8 +260,11 @@ export default function ConversationPage() {
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const typingSenderRef = useRef<TypingSenderController | null>(null);
+  const selfUserIdRef = useRef<string | null>(null);
   const [sendText, setSendText] = useState('');
   const [sending, setSending] = useState(false);
+  const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
 
   const { messages: inboundMessages } = useInboundPipeline({
     socket,
@@ -476,6 +486,40 @@ export default function ConversationPage() {
   }, [allMessages.length]);
 
   useEffect(() => {
+    selfUserIdRef.current = resolveSelfUserId(currentUser?.id, token);
+  }, [currentUser?.id, token]);
+
+  useEffect(() => {
+    if (!socket || !id) {
+      typingSenderRef.current = null;
+      return;
+    }
+
+    const sender = createTypingSender({
+      socket,
+      conversationId: id,
+      deviceId: getRealtimeDeviceId(token),
+    });
+    typingSenderRef.current = sender;
+
+    const receiver = subscribeTypingReceiver({
+      socket,
+      conversationId: id,
+      getSelfUserId: () => selfUserIdRef.current,
+      onTypingChange: setTypingUserIds,
+    });
+
+    return () => {
+      sender.dispose();
+      if (typingSenderRef.current === sender) {
+        typingSenderRef.current = null;
+      }
+      receiver.dispose();
+      setTypingUserIds([]);
+    };
+  }, [id, socket, token]);
+
+  useEffect(() => {
     if (!socket) return;
 
     emitSocketEnvelope(socket, 'join_room', { conversationId: id });
@@ -528,6 +572,7 @@ export default function ConversationPage() {
 
   async function handleSendEncrypted() {
     if (!sendText.trim() || !socket || !token) return;
+    typingSenderRef.current?.stop();
     setSending(true);
     try {
       const messageId = crypto.randomUUID();
@@ -621,6 +666,11 @@ export default function ConversationPage() {
       },
     }));
   }
+
+  const typingLabel = useMemo(
+    () => formatTypingLabel(typingUserIds, conversation?.members),
+    [conversation?.members, typingUserIds],
+  );
 
   if (isLoading || authLoading) {
     return (
@@ -768,6 +818,16 @@ export default function ConversationPage() {
           )}
         </div>
 
+        {typingLabel ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="shrink-0 px-5 py-1.5 text-xs italic text-foreground/60"
+          >
+            {typingLabel}
+          </div>
+        ) : null}
+
         <div className="flex shrink-0 items-center gap-2 border-t border-border bg-card/60 px-5 py-3">
           <input ref={fileInputRef} type="file" className="hidden" onChange={handleSendFile} />
           <button
@@ -783,7 +843,11 @@ export default function ConversationPage() {
             className="flex-1 rounded-full border border-border bg-background/40 px-4 py-2 text-sm text-foreground placeholder-foreground/40 focus:border-accent focus:outline-none"
             placeholder="Type a message..."
             value={sendText}
-            onChange={(e) => setSendText(e.target.value)}
+            onChange={(e) => {
+              const nextValue = e.target.value;
+              setSendText(nextValue);
+              typingSenderRef.current?.handleInputChange(nextValue);
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
