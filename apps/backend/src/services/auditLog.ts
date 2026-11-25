@@ -27,6 +27,7 @@ import { and, desc, eq, lt, or, type SQL } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { auditLogs, type AuditAction, type AuditLog } from '../db/schema.js';
 import type { AuthRequest } from '../middleware/auth.js';
+import { logger } from '../lib/logger.js';
 
 /**
  * Keys never written to the log, matched case-insensitively as substrings.
@@ -173,7 +174,7 @@ export async function recordAuditEvent(event: AuditEvent): Promise<void> {
     });
   } catch (err) {
     // Deliberately swallowed — see the module comment.
-    console.error('[audit] failed to record event', event.action, err);
+    logger.error({ module: 'audit', action: event.action, err }, 'failed to record audit event');
   }
 }
 

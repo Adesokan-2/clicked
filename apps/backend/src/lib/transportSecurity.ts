@@ -18,6 +18,8 @@
  *     plaintext again.
  */
 
+import { logger } from './logger.js';
+
 /** Environments in which plaintext transport is tolerated. */
 const DEV_ENVIRONMENTS = new Set(['development', 'test']);
 
@@ -164,8 +166,9 @@ export function assertTransportSecurityConfig(source: NodeJS.ProcessEnv = proces
   const enforced = isTlsEnforced(source);
 
   if (!enforced && !isDevEnvironment(source)) {
-    console.warn(
-      `[security] ENFORCE_TLS=false in "${appEnvironment(source)}" — plaintext transport is accepted.`,
+    logger.warn(
+      { module: 'security', environment: appEnvironment(source) },
+      'ENFORCE_TLS=false, plaintext transport is accepted',
     );
   }
 
@@ -174,8 +177,9 @@ export function assertTransportSecurityConfig(source: NodeJS.ProcessEnv = proces
   const origins = allowedOrigins(source);
 
   if (origins.length === 0) {
-    console.warn(
-      '[security] ALLOWED_ORIGINS is unset — browser origins are only checked for an https scheme.',
+    logger.warn(
+      { module: 'security' },
+      'ALLOWED_ORIGINS is unset, browser origins are only checked for an https scheme',
     );
     return;
   }

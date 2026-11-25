@@ -33,6 +33,13 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'warn',
+      'no-console': 'error',
+    },
+  },
+  {
+    files: ['src/**/*.test.ts', 'src/**/*.spec.ts', 'src/**/__tests__/**'],
+    rules: {
+      'no-console': 'off',
     },
   },
   {

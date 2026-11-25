@@ -28,3 +28,11 @@ export const logger = pino({
   },
   base: { service: 'clicked-backend' },
 });
+
+export function urlHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return 'invalid-url';
+  }
+}

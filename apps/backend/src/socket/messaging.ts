@@ -36,6 +36,7 @@ import { cleanupStaleSockets } from '../services/presence.js';
 import { EventDispatcher } from './dispatcher.js';
 import { findForbiddenSessionStateField } from '../lib/signalInvariants.js';
 import { checkFirstContactLimit } from '../services/rateLimit.js';
+import { logger } from '../lib/logger.js';
 
 const PAGE_SIZE = 30;
 
@@ -296,7 +297,7 @@ export function registerMessagingHandlers(io: Server, socket: AuthSocket): void 
         return insertedMessage!;
       });
     } catch (error) {
-      console.error('Transaction failed for message insert:', error);
+      logger.error({ module: 'messaging', err: error }, 'message insert transaction failed');
       socket.emit('error', { event: 'send_message', message: 'Failed to persist message' });
       return;
     }
@@ -425,7 +426,7 @@ export function registerMessagingHandlers(io: Server, socket: AuthSocket): void 
         return insertedMessage!;
       });
     } catch (error) {
-      console.error('Transaction failed for message edit:', error);
+      logger.error({ module: 'messaging', err: error }, 'message edit transaction failed');
       socket.emit('error', { event: 'edit_message', message: 'Failed to persist message edit' });
       return;
     }
@@ -604,7 +605,7 @@ export function registerMessagingHandlers(io: Server, socket: AuthSocket): void 
           return insertedMessage!;
         });
       } catch (error) {
-        console.error('Transaction failed for file message:', error);
+        logger.error({ module: 'messaging', err: error }, 'file message transaction failed');
         socket.emit('error', {
           event: 'send_file_message',
           message: 'Failed to persist file message',
@@ -1224,7 +1225,7 @@ export function registerMessagingHandlers(io: Server, socket: AuthSocket): void 
 
       await invalidateConversationCaches(members.map((member) => member.userId));
     } catch (err) {
-      console.error('ask_assistant error:', err);
+      logger.error({ module: 'messaging', err }, 'ask_assistant failed');
       socket.emit('error', { event: 'ask_assistant', message: 'Failed to get AI reply' });
     }
   });

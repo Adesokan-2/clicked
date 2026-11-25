@@ -14,6 +14,7 @@ import { pushSubscriptions } from '../db/schema.js';
 import { getEligiblePushRecipients } from './pushFilter.js';
 import { pushResultTotal } from '../lib/metrics.js';
 import { redis } from '../lib/redis.js';
+import { logger, urlHost } from '../lib/logger.js';
 
 const FILE_CONTENT_TYPES = new Set(['file', 'image', 'video', 'audio']);
 
@@ -149,20 +150,26 @@ async function sendWebPush(sub: SubRow, payload: string): Promise<void> {
       .set({ lastUsedAt: new Date() })
       .where(eq(pushSubscriptions.id, sub.id));
 
-    console.log(`[push] ok  → ${sub.endpoint.slice(0, 50)}`);
+    logger.info({ module: 'push', endpointHost: urlHost(sub.endpoint) }, 'push sent');
     pushResultTotal.inc({ result: 'sent' });
   } catch (err: unknown) {
     const status = (err as { statusCode?: number }).statusCode;
 
     if (status === 410 || status === 404) {
       // Dead subscription – prune immediately (#237)
-      console.log(`[push] prune ${status} → ${sub.endpoint.slice(0, 50)}`);
+      logger.info(
+        { module: 'push', status, endpointHost: urlHost(sub.endpoint) },
+        'pruning dead push subscription',
+      );
       await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, sub.id));
       pushResultTotal.inc({ result: 'pruned' });
     } else {
       // Transient failure – back off by disabling for 5 min (#237)
       const retryAfter = new Date(Date.now() + 5 * 60 * 1_000);
-      console.warn(`[push] backoff (${status ?? 'err'}) → ${sub.endpoint.slice(0, 50)}`);
+      logger.warn(
+        { module: 'push', status, endpointHost: urlHost(sub.endpoint) },
+        'push failed, backing off subscription',
+      );
       await db
         .update(pushSubscriptions)
         .set({ disabledAt: retryAfter })

@@ -24,6 +24,7 @@ import {
   isRateLimitingDisabled,
   type RateLimitBucket,
 } from '../config/rateLimits.js';
+import { logger } from '../lib/logger.js';
 
 export interface RateLimitResult {
   allowed: boolean;
@@ -110,8 +111,7 @@ export async function consumeRateLimit(
       }
       used = incremented;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(`[rateLimit] Redis unavailable (${message}) — using per-node counters`);
+      logger.warn({ module: 'rate-limit', err }, 'Redis unavailable, using per-node counters');
       used = consumeLocally(key, cost, rule.windowSeconds, now);
     }
   } else {

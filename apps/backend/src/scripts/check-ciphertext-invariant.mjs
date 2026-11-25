@@ -51,9 +51,9 @@ for (const file of filesUnder(root)) {
 }
 
 if (violations.length > 0) {
-  console.error('Ciphertext-only invariant failed:');
-  for (const violation of violations) console.error(`- ${violation}`);
+  process.stderr.write('Ciphertext-only invariant failed:\n');
+  for (const violation of violations) process.stderr.write(`- ${violation}\n`);
   process.exit(1);
 }
 
-console.log('Ciphertext-only invariant passed.');
+process.stdout.write('Ciphertext-only invariant passed.\n');

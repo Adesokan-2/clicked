@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { loadEnv, EnvSchema } from '../config.js';
+import { logger } from '../lib/logger.js';
 
 const validEnv = {
   DATABASE_URL: 'postgres://localhost/test',
@@ -21,8 +22,8 @@ describe('loadEnv', () => {
   });
 
   it('returns parsed env and emits no output for a valid environment', () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
 
     const env = loadEnv({ ...validEnv });
 
@@ -40,11 +41,11 @@ describe('loadEnv', () => {
       OBJECT_STORE_FORCE_PATH_STYLE: true,
     });
     expect(errorSpy).not.toHaveBeenCalled();
-    expect(logSpy).not.toHaveBeenCalled();
+    expect(infoSpy).not.toHaveBeenCalled();
   });
 
   it('logs the missing variable and exits with code 1 when DATABASE_URL is absent', () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
       throw new Error('process.exit called');
     }) as never);
@@ -56,12 +57,12 @@ describe('loadEnv', () => {
     expect(() => loadEnv(withoutDbUrl)).toThrow('process.exit called');
     expect(exitSpy).toHaveBeenCalledWith(1);
 
-    const logged = errorSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+    const logged = JSON.stringify(errorSpy.mock.calls);
     expect(logged).toContain('DATABASE_URL');
   });
 
   it('reports every missing variable on an empty environment', () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
       throw new Error('process.exit called');
     }) as never);
@@ -69,21 +70,21 @@ describe('loadEnv', () => {
     expect(() => loadEnv({})).toThrow('process.exit called');
     expect(exitSpy).toHaveBeenCalledWith(1);
 
-    const logged = errorSpy.mock.calls.map((args) => args.join(' ')).join('\n');
+    const logged = JSON.stringify(errorSpy.mock.calls);
     for (const key of Object.keys(validEnv)) {
       expect(logged).toContain(key);
     }
   });
 
   it('rejects a non-numeric PORT', () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
       throw new Error('process.exit called');
     }) as never);
 
     expect(() => loadEnv({ ...validEnv, PORT: 'not-a-number' })).toThrow('process.exit called');
     expect(exitSpy).toHaveBeenCalledWith(1);
-    expect(errorSpy.mock.calls.map((args) => args.join(' ')).join('\n')).toContain('PORT');
+    expect(JSON.stringify(errorSpy.mock.calls)).toContain('PORT');
   });
 
   it('coerces a numeric PORT string to a number', () => {

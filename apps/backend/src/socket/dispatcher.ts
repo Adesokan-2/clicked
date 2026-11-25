@@ -8,6 +8,7 @@ import {
   type EventEnvelope,
 } from '../lib/eventEnvelope.js';
 import { isReplay } from '../services/replay-protection.service.js';
+import { logger } from '../lib/logger.js';
 
 type Handler = (payload: Record<string, unknown>) => Promise<void>;
 
@@ -67,7 +68,10 @@ export class EventDispatcher {
       const envelope = result.data as EventEnvelope;
 
       if (!isKnownEventType(envelope.type)) {
-        console.warn(`[dispatcher] unknown event type "${envelope.type}" — discarding`);
+        logger.warn(
+          { module: 'dispatcher', type: envelope.type },
+          'unknown event type, discarding',
+        );
         this.socket.emit(
           'error',
           createEnvelope('error', {
@@ -93,11 +97,15 @@ export class EventDispatcher {
       // global: two devices legitimately generating the same eventId must not
       // block each other. Fails open when Redis is unavailable.
       if (await isReplay(this.redis, this.socket.auth.deviceId, envelope.eventId)) {
-        console.debug('[replay-protection] Dropping replay event', {
-          deviceId: this.socket.auth.deviceId,
-          eventId: envelope.eventId,
-          type: envelope.type,
-        });
+        logger.debug(
+          {
+            module: 'replay-protection',
+            deviceId: this.socket.auth.deviceId,
+            eventId: envelope.eventId,
+            type: envelope.type,
+          },
+          'dropping replay event',
+        );
         // Already processed — acknowledge without re-running.
         this.socket.emit('dispatch_ack', { eventId: envelope.eventId, duplicate: true });
         return;
@@ -105,7 +113,10 @@ export class EventDispatcher {
 
       const handler = this.handlers.get(envelope.type);
       if (!handler) {
-        console.warn(`[dispatcher] no handler for known type "${envelope.type}"`);
+        logger.warn(
+          { module: 'dispatcher', type: envelope.type },
+          'no handler for known event type',
+        );
         return;
       }
 
@@ -113,7 +124,7 @@ export class EventDispatcher {
         await handler(envelope.payload ?? {});
         this.socket.emit('dispatch_ack', { eventId: envelope.eventId, duplicate: false });
       } catch (err) {
-        console.error(`[dispatcher] handler error for "${envelope.type}":`, err);
+        logger.error({ module: 'dispatcher', type: envelope.type, err }, 'event handler failed');
       }
     });
   }
