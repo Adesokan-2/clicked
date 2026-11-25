@@ -5,16 +5,16 @@ import { db } from '../db/index.js';
 import { treasuryProposals, proposalVotes, conversationMembers } from '../db/schema.js';
 import { requireAuth, type AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
+import {
+  TTL_LEDGERS,
+  computeExpiresAt,
+  isProposalExpired,
+  resolveProposalStatus,
+} from '../services/treasuryExpiry.js';
 
 export const treasuryRouter: IRouter = Router();
 
 treasuryRouter.use(requireAuth);
-
-const TTL_LEDGERS: Record<string, number> = {
-  '24h': 17280, // ~24 h at 5 s/ledger
-  '72h': 51840,
-  '7d': 120960,
-};
 
 const proposeSchema = z.object({
   amount: z.number().positive(),
@@ -60,6 +60,8 @@ treasuryRouter.post('/propose', validate(proposeSchema), async (req, res) => {
     return;
   }
 
+  const expiresAt = computeExpiresAt(ttl, new Date());
+
   const [proposal] = await db
     .insert(treasuryProposals)
     .values({
@@ -71,6 +73,7 @@ treasuryRouter.post('/propose', validate(proposeSchema), async (req, res) => {
       amount: String(amount),
       token,
       threshold: threshold ?? 3,
+      expiresAt,
     })
     .returning();
 
@@ -141,9 +144,14 @@ treasuryRouter.get('/proposals', async (req, res) => {
 
   const votedMap = new Map(votes.map((v) => [v.treasuryProposalId, v.vote]));
 
+  // Expiry is derived on read: status stays `active` in the DB and is reported
+  // as `expired` once `expiresAt` has passed.
+  const now = new Date();
+
   res.json(
     rows.map((r) => ({
       ...r,
+      status: resolveProposalStatus(r, now),
       hasVoted: votedMap.has(r.id),
       myVote: votedMap.get(r.id) ?? null,
     })),
@@ -170,6 +178,10 @@ async function handleVote(
     return;
   }
 
+  if (isProposalExpired(proposal, new Date())) {
+    res.status(409).json({ error: 'Proposal has expired' });
+    return;
+  }
   // Fail closed for legacy orphan proposals and for callers outside the
   // proposal's conversation, before revealing its state or recording a vote.
   if (
