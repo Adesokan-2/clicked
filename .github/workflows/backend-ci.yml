@@ -82,7 +82,7 @@ jobs:
             -p 9001:9001 \
             -e MINIO_ROOT_USER="$OBJECT_STORE_ACCESS_KEY" \
             -e MINIO_ROOT_PASSWORD="$OBJECT_STORE_SECRET_KEY" \
-            minio/minio:RELEASE.2025-04-22T22-12-26Z \
+            quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z \
             server /data --console-address ":9001"
 
       - name: Wait for MinIO

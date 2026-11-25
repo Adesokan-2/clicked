@@ -131,7 +131,7 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     (err as { statusCode?: unknown } | null)?.statusCode;
   if (typeof status === 'number' && status >= 400 && status < 600) {
     res.status(status).json({
-      error: status < 500 ? ((err as { expose?: boolean }).expose ? (err as Error).message : 'Bad request') : 'Internal server error',
+      error: status < 500 ? 'Bad request' : 'Internal server error',
     });
     return;
   }
