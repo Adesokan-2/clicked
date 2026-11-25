@@ -6,6 +6,9 @@ import { ProposalCard, type Proposal } from '@/components/treasury/ProposalCard'
 import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/components/auth/useAuth';
 import { useSocket } from '@/hooks/useSocket';
+import { useToast } from '@/lib/useToast';
+import { SkeletonLoader } from '@/components/ui/SkeletonLoader';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 export default function TreasuryPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -13,6 +16,7 @@ export default function TreasuryPage() {
   const socket = useSocket(token);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loadingProposals, setLoadingProposals] = useState(true);
+  const { error: toastError } = useToast();
 
   const assets = [
     {
@@ -80,16 +84,19 @@ export default function TreasuryPage() {
       const res = await apiFetch('/treasury/proposals', {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
-        const data = (await res.json()) as Proposal[];
-        setProposals(data);
+      if (!res.ok) {
+        toastError('Failed to load treasury proposals.');
+        return;
       }
+
+      const data = (await res.json()) as Proposal[];
+      setProposals(data);
     } catch {
-      // network error — leave existing list in place
+      toastError('Failed to load treasury proposals.');
     } finally {
       setLoadingProposals(false);
     }
-  }, [token]);
+  }, [token, toastError]);
 
   useEffect(() => {
     fetchProposals();
@@ -197,19 +204,14 @@ export default function TreasuryPage() {
         <h2 className="text-lg font-bold text-foreground/90 mb-4">Active Proposals</h2>
         {loadingProposals ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="h-44 rounded-2xl bg-card/20 border border-border animate-pulse"
-              />
-            ))}
+            <SkeletonLoader variant="card" count={3} />
           </div>
         ) : proposals.length === 0 ? (
-          <div className="p-8 rounded-2xl bg-card/20 border border-border text-center">
-            <p className="text-foreground/40 text-sm">
-              No proposals yet. Use &quot;Propose Withdrawal&quot; to create one.
-            </p>
-          </div>
+          <EmptyState
+            icon="📋"
+            title="No proposals yet"
+            description='Use "Propose Withdrawal" to create one.'
+          />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {proposals.map((p) => (
