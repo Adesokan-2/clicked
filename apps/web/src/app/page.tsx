@@ -4,7 +4,6 @@ import { Features } from '@/components/landing/Features';
 import { HowItWorks } from '@/components/landing/HowItWorks';
 import { TechStack } from '@/components/landing/TechStack';
 import { CTA } from '@/components/landing/CTA';
-import { ToastDemo } from '@/components/ToastDemo';
 import { Footer } from '@/components/landing/Footer';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 
@@ -18,7 +17,6 @@ export default function LandingPage() {
           <Features />
           <HowItWorks />
           <TechStack />
-          <ToastDemo />
           <CTA />
         </main>
         <Footer />

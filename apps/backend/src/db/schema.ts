@@ -565,6 +565,8 @@ export const treasuryProposals = pgTable(
     amount: text('amount'),
     token: text('token'),
     threshold: integer('threshold').notNull().default(3),
+    /** Null only for legacy rows created before expiry was persisted (#658). */
+    expiresAt: timestamp('expires_at'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },

@@ -18,6 +18,7 @@
 import { and, lt, or, isNotNull } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { messageEnvelopes } from '../db/schema.js';
+import { logger } from '../lib/logger.js';
 
 function getEnvelopeDeliveredRetentionMs(): number {
   const raw = process.env['ENVELOPE_DELIVERED_RETENTION_DAYS'];
@@ -66,9 +67,9 @@ export function startEnvelopeGcJob(): void {
   envelopeGcTimer = setInterval(() => {
     void runEnvelopeGcPass()
       .then((count) => {
-        if (count) console.log(`[envelope-gc] pruned ${count} envelope(s)`);
+        if (count) logger.info({ module: 'envelope-gc', count }, 'pruned envelopes');
       })
-      .catch((err) => console.error('[envelope-gc] job error:', err));
+      .catch((err) => logger.error({ module: 'envelope-gc', err }, 'envelope gc job failed'));
   }, getGcIntervalMs());
   envelopeGcTimer.unref();
 }

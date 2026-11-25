@@ -17,6 +17,7 @@ import { db } from '../db/index.js';
 import { files } from '../db/schema.js';
 import { getObjectStore } from '../lib/objectStore.js';
 import { reenableExpiredBackoffs } from './pushNotification.js';
+import { logger } from '../lib/logger.js';
 
 function getCleanupIntervalMs(): number {
   const raw = process.env['FILE_GC_INTERVAL_MS'];
@@ -83,9 +84,9 @@ export async function runHardDeletePass(): Promise<void> {
         .update(files)
         .set({ hardDeletedAt: new Date() })
         .where(sql`${files.id} = ${file.id}`);
-      console.log(`[file-cleanup] hard-deleted ${file.storageKey}`);
+      logger.info({ module: 'file-cleanup', fileId: file.id }, 'hard-deleted file');
     } catch (err) {
-      console.error(`[file-cleanup] failed to delete ${file.storageKey}:`, err);
+      logger.error({ module: 'file-cleanup', fileId: file.id, err }, 'failed to hard-delete file');
     }
   }
 
@@ -100,9 +101,12 @@ export async function runHardDeletePass(): Promise<void> {
     try {
       await getObjectStore().deleteObject(file.storageKey);
       await db.delete(files).where(eq(files.id, file.id));
-      console.log(`[file-cleanup] deleted pending file ${file.storageKey}`);
+      logger.info({ module: 'file-cleanup', fileId: file.id }, 'deleted stale pending file');
     } catch (err) {
-      console.error(`[file-cleanup] failed to delete pending file ${file.storageKey}:`, err);
+      logger.error(
+        { module: 'file-cleanup', fileId: file.id, err },
+        'failed to delete stale pending file',
+      );
     }
   }
 }
@@ -116,7 +120,7 @@ export function startFileCleanupJob(): void {
       await runHardDeletePass();
       await reenableExpiredBackoffs();
     } catch (err) {
-      console.error('[file-cleanup] job error:', err);
+      logger.error({ module: 'file-cleanup', err }, 'file cleanup job failed');
     }
   }, getCleanupIntervalMs());
   cleanupTimer.unref();

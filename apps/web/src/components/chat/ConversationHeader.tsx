@@ -2,12 +2,14 @@
 
 import { useRef, useState } from 'react';
 import { Avatar } from '@/components/ui/Avatar';
+import { usePresence, type PresenceSocket } from '@/hooks/usePresence';
 
 interface Member {
   user?: {
     id?: string;
     username?: string | null;
     avatarUrl?: string | null;
+    presenceVisible?: boolean;
     wallets?: { address?: string; isPrimary?: boolean }[];
   };
 }
@@ -19,11 +21,19 @@ interface ConversationHeaderProps {
   members?: Member[];
   /** Current user's wallet address — used to find the DM peer */
   currentWalletAddress?: string;
+  /** Optional socket instance for real-time presence updates */
+  socket?: PresenceSocket | null;
   /** Whether the current user has muted this conversation */
   isMuted?: boolean;
   onLeave: (conversationId: string) => Promise<void>;
   onMuteToggle: (conversationId: string, muted: boolean) => Promise<void>;
   onViewMembers: () => void;
+}
+
+function findPeerMember(members: Member[], currentWalletAddress?: string): Member | undefined {
+  return members.find((m) =>
+    m.user?.wallets?.some((w) => w.address && w.address !== currentWalletAddress),
+  );
 }
 
 function peerLabel(members: Member[], currentWalletAddress?: string): string {
@@ -33,19 +43,13 @@ function peerLabel(members: Member[], currentWalletAddress?: string): string {
   return peer?.address ?? 'Direct message';
 }
 
-function peerAvatarUrl(members: Member[], currentWalletAddress?: string): string | null {
-  const peerMember = members.find((m) =>
-    m.user?.wallets?.some((w) => w.address && w.address !== currentWalletAddress),
-  );
-  return peerMember?.user?.avatarUrl ?? null;
-}
-
 export function ConversationHeader({
   conversationId,
   type,
   name,
   members = [],
   currentWalletAddress,
+  socket,
   isMuted = false,
   onLeave,
   onMuteToggle,
@@ -59,10 +63,16 @@ export function ConversationHeader({
   const title =
     type === 'group' ? (name ?? 'Group conversation') : peerLabel(members, currentWalletAddress);
 
-  const avatarUrl = type === 'dm' ? peerAvatarUrl(members, currentWalletAddress) : null;
+  const peerMember = type === 'dm' ? findPeerMember(members, currentWalletAddress) : undefined;
+  const avatarUrl = peerMember?.user?.avatarUrl ?? null;
+  const peerUserId = peerMember?.user?.id;
+  const peerPresenceVisible = peerMember?.user?.presenceVisible !== false;
 
-  // Derive online status: not tracked server-side yet, placeholder false
-  const isOnline = false;
+  const onlineUsers = usePresence(
+    peerUserId && peerPresenceVisible ? [peerUserId] : [],
+    socket,
+  );
+  const isOnline = Boolean(peerUserId && onlineUsers.has(peerUserId));
 
   async function handleLeaveConfirm() {
     setConfirmLeave(false);
@@ -85,12 +95,14 @@ export function ConversationHeader({
           <div className="relative shrink-0">
             <Avatar src={avatarUrl ?? undefined} fallback={title} size="md" />
             {/* Online status dot */}
-            <span
-              aria-label={isOnline ? 'Online' : 'Offline'}
-              className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white ${
-                isOnline ? 'bg-green-500' : 'bg-gray-400'
-              }`}
-            />
+            {peerPresenceVisible && (
+              <span
+                aria-label={isOnline ? 'Online' : 'Offline'}
+                className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white ${
+                  isOnline ? 'bg-green-500' : 'bg-gray-400'
+                }`}
+              />
+            )}
           </div>
         )}
 

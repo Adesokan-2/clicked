@@ -8,6 +8,9 @@ use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, Symbol};
 use storage::{DataKey, TransferEvent};
 use token_interface::TokenClient;
 
+/// Maximum permitted transfer memo length in bytes.
+pub const MAX_MEMO_LEN: u32 = 64;
+
 #[contract]
 pub struct TokenTransferContract;
 
@@ -32,6 +35,10 @@ impl TokenTransferContract {
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128, memo: Bytes) {
         if amount <= 0 {
             panic!("amount must be positive");
+        }
+
+        if memo.len() > MAX_MEMO_LEN {
+            panic!("memo too long");
         }
 
         // Require the sender's authorisation

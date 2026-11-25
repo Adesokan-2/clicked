@@ -43,7 +43,7 @@ self.addEventListener('notificationclick', (event) => {
   const conversationId = event.notification.data?.conversationId ?? null;
   const target = conversationId
     ? `/app/conversations/${conversationId}`
-    : '/app/messages';
+    : '/app';
 
   event.waitUntil(
     self.clients

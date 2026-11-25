@@ -5,6 +5,7 @@ import { messageEnvelopes, devices, conversationMembers, messages } from '../db/
 import { publishEphemeral } from './resumeStream.js';
 import type { Redis } from 'ioredis';
 import { conversationRoom } from './roomManager.js';
+import { logger } from '../lib/logger.js';
 
 /**
  * Check if a message has been delivered to all active devices for a recipient user.
@@ -68,7 +69,7 @@ export async function handleDeviceDeliveryReceipt(
   });
 
   if (!message) {
-    console.warn(`[deliveryAggregation] Message not found: ${messageId}`);
+    logger.warn({ module: 'delivery-aggregation', messageId }, 'message not found');
     return;
   }
 

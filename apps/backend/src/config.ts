@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { logger } from './lib/logger.js';
 
 const booleanEnv = z
   .enum(['true', 'false', '1', '0'])
@@ -58,10 +59,17 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
 
   if (!result.success) {
     const vars = [...new Set(result.error.issues.map((issue) => issue.path.join('.')))];
-    console.error(`Missing or invalid environment variables: ${vars.join(', ')}`);
-    for (const issue of result.error.issues) {
-      console.error(`  - ${issue.path.join('.')}: ${issue.message}`);
-    }
+    logger.error(
+      {
+        module: 'config',
+        variables: vars,
+        issues: result.error.issues.map((issue) => ({
+          path: issue.path.join('.'),
+          message: issue.message,
+        })),
+      },
+      'missing or invalid environment variables',
+    );
     process.exit(1);
   }
 

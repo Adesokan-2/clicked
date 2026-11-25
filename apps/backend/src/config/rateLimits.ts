@@ -15,6 +15,8 @@
  * scraping and resource exhaustion, not to shape normal client behaviour.
  */
 
+import { logger } from '../lib/logger.js';
+
 export interface RateLimitRule {
   /** Maximum cost permitted per window. */
   limit: number;
@@ -92,6 +94,11 @@ export const RATE_LIMIT_DEFAULTS = {
     windowSeconds: MINUTE,
     description: 'Web-push subscription registration',
   },
+  audit_logs: {
+    limit: 30,
+    windowSeconds: MINUTE,
+    description: 'Security audit log queries',
+  },
 
   // ── Socket events ──────────────────────────────────────────────────────────
   socket_default: {
@@ -164,7 +171,10 @@ export function getRateLimitRule(
   const limit = positiveInt(rawLimit);
 
   if (limit === undefined) {
-    console.warn(`[rateLimit] ignoring malformed RATE_LIMIT_${bucket.toUpperCase()}="${override}"`);
+    logger.warn(
+      { module: 'rate-limit', variable: `RATE_LIMIT_${bucket.toUpperCase()}`, value: override },
+      'ignoring malformed rate limit override',
+    );
     return fallback;
   }
 

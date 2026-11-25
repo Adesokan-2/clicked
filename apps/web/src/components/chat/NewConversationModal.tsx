@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { apiFetch } from '@/lib/api';
+import { useToast } from '@/lib/useToast';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 const MAX_QUERY_LENGTH = 120;
 
 type SearchUser = {
@@ -30,13 +31,14 @@ export function NewConversationModal({
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchUser[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [searchFailed, setSearchFailed] = useState(false);
+  const { error: toastError } = useToast();
 
   useEffect(() => {
     if (!open) {
       setQuery('');
       setResults([]);
-      setError(null);
+      setSearchFailed(false);
       setLoading(false);
       return;
     }
@@ -46,38 +48,48 @@ export function NewConversationModal({
 
     if (!safeQuery) {
       setResults([]);
-      setError(null);
+      setSearchFailed(false);
       setLoading(false);
       return;
     }
 
     setLoading(true);
-    setError(null);
+    setSearchFailed(false);
+
+    const controller = new AbortController();
 
     const timeout = window.setTimeout(async () => {
       try {
-        const response = await fetch(`${API_URL}/users/search?q=${encodeURIComponent(safeQuery)}`, {
-          headers: { Authorization: 'Bearer ' + token },
+        const response = await apiFetch(`/users/search?q=${encodeURIComponent(safeQuery)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
         });
 
         if (!response.ok) {
-          throw new Error('Failed to search users');
+          const body = (await response.json().catch(() => ({}))) as { error?: string };
+          setResults([]);
+          setSearchFailed(true);
+          toastError(body.error ?? 'Failed to search users');
+          return;
         }
 
         const payload = (await response.json()) as SearchUser[];
         setResults(payload);
-      } catch (searchError) {
+      } catch {
+        if (controller.signal.aborted) return;
         setResults([]);
-        setError(searchError instanceof Error ? searchError.message : 'Failed to search users');
+        setSearchFailed(true);
+        toastError('Network error — please try again');
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     }, 300);
 
     return () => {
       window.clearTimeout(timeout);
+      controller.abort();
     };
-  }, [open, query, token]);
+  }, [open, query, token, toastError]);
 
   if (!open) {
     return null;
@@ -106,8 +118,7 @@ export function NewConversationModal({
 
         <div className="mt-4 max-h-64 space-y-2 overflow-y-auto">
           {loading ? <p className="text-sm text-slate-300">Searching...</p> : null}
-          {error ? <p className="text-sm text-rose-300">{error}</p> : null}
-          {!loading && !error && query.trim() && results.length === 0 ? (
+          {!loading && !searchFailed && query.trim() && results.length === 0 ? (
             <EmptyState
               icon="🔎"
               title="No users found"

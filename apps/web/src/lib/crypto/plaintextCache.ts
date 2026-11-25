@@ -13,6 +13,10 @@ export function setCachedPlaintext(messageId: string, plaintext: string): void {
   cache.set(messageId, plaintext);
 }
 
+export function deleteCachedPlaintext(messageId: string): void {
+  cache.delete(messageId);
+}
+
 export function hasCachedPlaintext(messageId: string): boolean {
   return cache.has(messageId);
 }

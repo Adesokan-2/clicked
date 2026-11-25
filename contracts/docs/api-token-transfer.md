@@ -49,6 +49,7 @@ pub fn transfer(env: Env, from: Address, to: Address, amount: i128, memo: Bytes)
 What it does:
 
 - Validates the transfer amount.
+- Validates that the memo is no longer than 64 bytes (`MAX_MEMO_LEN`).
 - Requires the sender address to authorize the call.
 - Resolves the configured token contract from instance storage.
 - Delegates the actual transfer to that token contract.
@@ -62,6 +63,8 @@ Authorization:
 Panics / failure conditions:
 
 - Panics with `"amount must be positive"` when `amount <= 0`.
+- Panics with `"memo too long"` when the memo exceeds 64 bytes.
+- Memo length is measured in bytes, not characters.
 - Panics with `"not initialized"` if no token contract has been configured yet.
 - Fails if the `from` address does not provide the required authorization.
 - Can also fail or panic if the underlying token contract rejects the transfer (for example, if the sender does not have enough balance or the token contract itself aborts).

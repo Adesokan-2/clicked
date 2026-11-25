@@ -13,7 +13,14 @@ import {
 import { useParams } from 'next/navigation';
 import { API_BASE_URL } from '@/lib/api';
 import { useSocket } from '@/hooks/useSocket';
-import { emitSocketEnvelope } from '@/lib/realtime';
+import { emitSocketEnvelope, getRealtimeDeviceId } from '@/lib/realtime';
+import {
+  createTypingSender,
+  formatTypingLabel,
+  resolveSelfUserId,
+  subscribeTypingReceiver,
+  type TypingSenderController,
+} from '@/lib/typingIndicator';
 import { useAuth } from '@/components/auth/useAuth';
 import { Avatar } from '@/components/ui/Avatar';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -67,6 +74,7 @@ type Message = {
   createdAt: string;
   sender?: Sender;
   unavailable?: boolean;
+  deleted?: boolean;
   /** File message payload (decrypted envelope plaintext for file messages) */
   filePayload?: {
     fileId: string;
@@ -255,6 +263,8 @@ export default function ConversationPage() {
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const typingSenderRef = useRef<TypingSenderController | null>(null);
+  const selfUserIdRef = useRef<string | null>(null);
   const [sendText, setSendText] = useState('');
   const [sending, setSending] = useState(false);
   const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
@@ -341,8 +351,9 @@ export default function ConversationPage() {
       toastError('Could not send the delete request.');
     }
   }
+  const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
 
-  const { messages: inboundMessages } = useInboundPipeline({
+  const { messages: inboundMessages, deletedMessageIds } = useInboundPipeline({
     socket,
     token,
     conversationId: id,
@@ -356,6 +367,18 @@ export default function ConversationPage() {
 
     const merged: Message[] = [];
     for (const msg of messages) {
+      if (deletedMessageIds.has(msg.id)) {
+        merged.push({
+          ...msg,
+          deleted: true,
+          content: null,
+          ciphertext: null,
+          filePayload: undefined,
+          unavailable: false,
+        });
+        continue;
+      }
+
       const inbound = inboundById.get(msg.id);
       if (inbound && inbound.status === 'decrypted' && inbound.plaintext) {
         let filePayload: Message['filePayload'];
@@ -385,6 +408,19 @@ export default function ConversationPage() {
 
     for (const inbound of inboundMessages) {
       const exists = merged.some((m) => m.id === inbound.messageId);
+
+      if (!exists && deletedMessageIds.has(inbound.messageId)) {
+        merged.push({
+          id: inbound.messageId,
+          conversationId: inbound.conversationId,
+          senderId: inbound.senderId,
+          contentType: inbound.contentType,
+          createdAt: inbound.createdAt,
+          deleted: true,
+        });
+        continue;
+      }
+
       if (!exists) {
         if (inbound.status === 'decrypted' && inbound.plaintext) {
           let filePayload: Message['filePayload'];
@@ -424,7 +460,7 @@ export default function ConversationPage() {
     return merged
       .filter((message) => !hiddenMessageIds.has(message.id))
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-  }, [messages, inboundMessages, hiddenMessageIds]);
+  }, [messages, inboundMessages, deletedMessageIds, hiddenMessageIds]);
 
   const contacts = useMemo(() => {
     const members = conversation?.members ?? [];
@@ -564,6 +600,40 @@ export default function ConversationPage() {
   }, [allMessages.length]);
 
   useEffect(() => {
+    selfUserIdRef.current = resolveSelfUserId(currentUser?.id, token);
+  }, [currentUser?.id, token]);
+
+  useEffect(() => {
+    if (!socket || !id) {
+      typingSenderRef.current = null;
+      return;
+    }
+
+    const sender = createTypingSender({
+      socket,
+      conversationId: id,
+      deviceId: getRealtimeDeviceId(token),
+    });
+    typingSenderRef.current = sender;
+
+    const receiver = subscribeTypingReceiver({
+      socket,
+      conversationId: id,
+      getSelfUserId: () => selfUserIdRef.current,
+      onTypingChange: setTypingUserIds,
+    });
+
+    return () => {
+      sender.dispose();
+      if (typingSenderRef.current === sender) {
+        typingSenderRef.current = null;
+      }
+      receiver.dispose();
+      setTypingUserIds([]);
+    };
+  }, [id, socket, token]);
+
+  useEffect(() => {
     if (!socket) return;
 
     emitSocketEnvelope(socket, 'join_room', { conversationId: id });
@@ -616,6 +686,7 @@ export default function ConversationPage() {
 
   async function handleSendEncrypted() {
     if (!sendText.trim() || !socket || !token) return;
+    typingSenderRef.current?.stop();
     setSending(true);
     try {
       const messageId = crypto.randomUUID();
@@ -710,6 +781,11 @@ export default function ConversationPage() {
     }));
   }
 
+  const typingLabel = useMemo(
+    () => formatTypingLabel(typingUserIds, conversation?.members),
+    [conversation?.members, typingUserIds],
+  );
+
   if (isLoading || authLoading) {
     return (
       <div className="flex h-[calc(100vh-8rem)] items-center justify-center rounded-lg border border-border bg-card/40">
@@ -783,7 +859,7 @@ export default function ConversationPage() {
               {allMessages.map((message) => {
                 const isSelf = message.senderId === currentUser?.id;
                 const senderName = message.sender?.username ?? 'Unknown';
-                const transfer = parseTransferPayload(message);
+                const transfer = message.deleted ? null : parseTransferPayload(message);
 
                 return (
                   <div
@@ -799,7 +875,11 @@ export default function ConversationPage() {
                       {!isSelf ? (
                         <p className="mb-1 px-1 text-xs text-foreground/45">{senderName}</p>
                       ) : null}
-                      {transfer ? (
+                      {message.deleted ? (
+                        <div className="rounded-2xl border border-border bg-background/40 px-4 py-3 text-sm italic text-foreground/45">
+                          Message deleted
+                        </div>
+                      ) : transfer ? (
                         <TransferCard
                           amount={transfer.amount}
                           token={transfer.token}
@@ -867,6 +947,16 @@ export default function ConversationPage() {
           )}
         </div>
 
+        {typingLabel ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="shrink-0 px-5 py-1.5 text-xs italic text-foreground/60"
+          >
+            {typingLabel}
+          </div>
+        ) : null}
+
         <div className="flex shrink-0 items-center gap-2 border-t border-border bg-card/60 px-5 py-3">
           <input ref={fileInputRef} type="file" className="hidden" onChange={handleSendFile} />
           <button
@@ -882,7 +972,11 @@ export default function ConversationPage() {
             className="flex-1 rounded-full border border-border bg-background/40 px-4 py-2 text-sm text-foreground placeholder-foreground/40 focus:border-accent focus:outline-none"
             placeholder="Type a message..."
             value={sendText}
-            onChange={(e) => setSendText(e.target.value)}
+            onChange={(e) => {
+              const nextValue = e.target.value;
+              setSendText(nextValue);
+              typingSenderRef.current?.handleInputChange(nextValue);
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();

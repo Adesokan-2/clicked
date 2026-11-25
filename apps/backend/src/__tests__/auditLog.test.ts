@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
+import { logger } from '../lib/logger.js';
 
 const insertedRows: Array<Record<string, unknown>> = [];
 const mockValues = vi.fn(async (row: Record<string, unknown>) => {
@@ -45,6 +46,7 @@ const {
   actorFromRequest,
 } = await import('../services/auditLog.js');
 const { auditLogsRouter } = await import('../routes/auditLogs.js');
+const { app: fullApp } = await import('../app.js');
 
 function makeApp() {
   const app = express();
@@ -134,7 +136,7 @@ describe('recordAuditEvent', () => {
   });
 
   it('never lets a failed audit write break the action it observes', async () => {
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
     mockInsert.mockImplementation(() => {
       throw new Error('audit table unavailable');
     });
@@ -142,7 +144,10 @@ describe('recordAuditEvent', () => {
     await expect(
       recordAuditEvent({ action: 'device_revoked', actorUserId: 'user-alice' }),
     ).resolves.toBeUndefined();
-    expect(error).toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({ module: 'audit', action: 'device_revoked' }),
+      'failed to record audit event',
+    );
 
     error.mockRestore();
   });
@@ -364,5 +369,15 @@ describe('AC3 — logs are queryable for an account', () => {
     await request(makeApp()).get('/audit-logs?limit=100000');
 
     expect(mockAuditFindMany).toHaveBeenCalledWith(expect.objectContaining({ limit: 201 }));
+  });
+
+  it('serves GET /audit-logs when mounted in app', async () => {
+    mockAuditFindMany.mockResolvedValue([]);
+
+    const res = await request(fullApp).get('/audit-logs');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('events');
+    expect(mockAuditFindMany).toHaveBeenCalled();
   });
 });

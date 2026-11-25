@@ -1,25 +1,9 @@
-/**
- * Stellar event listener for `token_transfer` (#46) and `group_treasury` multisig (#130).
- *
- * Subscribes to contract events emitted by the `token_transfer` and
- * `group_treasury` Soroban contracts. The listener:
- *
- *   - Polls Soroban RPC `getEvents` on a short interval (cursor-based).
- *   - Reconnects automatically after a transient failure with exponential
- *     backoff capped at 30 seconds.
- *   - Upserts on the unique `tx_hash` / `(contractId, proposalId)` so
- *     reconnects that re-read a page produce no duplicates.
- *   - After each treasury proposal DB update, emits a
- *     `treasury_proposal_updated` Socket.IO event to the relevant room.
- *   - Logs errors via the standard backend logger but never rethrows out
- *     of `runForever`, so the API server stays up even if the chain is
- *     unreachable.
- */
 import { rpc } from '@stellar/stellar-sdk';
 import { db } from '../db/index.js';
 import { tokenTransfers, messages, conversations, users, treasuryProposals } from '../db/schema.js';
 import { and, eq, sql } from 'drizzle-orm';
 import { getSocketServer } from '../lib/socket.js';
+import { logger } from '../lib/logger.js';
 
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_BACKOFF_BASE_MS = 1_000;
@@ -64,7 +48,7 @@ export interface TreasuryProposalEvent {
 }
 
 export interface StellarListenerDeps {
-  /** Optional logger; defaults to a console wrapper. */
+  /** Optional logger; defaults to the shared pino logger. */
   log?: {
     info: (msg: string, ctx?: unknown) => void;
     warn: (msg: string, ctx?: unknown) => void;
@@ -87,10 +71,15 @@ export interface StellarListenerDeps {
   signal?: AbortSignal;
 }
 
-const consoleLogger = {
-  info: (msg: string, ctx?: unknown) => console.log(`[stellar-listener] ${msg}`, ctx ?? ''),
-  warn: (msg: string, ctx?: unknown) => console.warn(`[stellar-listener] ${msg}`, ctx ?? ''),
-  error: (msg: string, ctx?: unknown) => console.error(`[stellar-listener] ${msg}`, ctx ?? ''),
+function listenerFields(ctx: unknown): Record<string, unknown> {
+  const fields = ctx && typeof ctx === 'object' ? (ctx as Record<string, unknown>) : { ctx };
+  return { module: 'stellar-listener', ...fields };
+}
+
+const pinoLogger: NonNullable<StellarListenerDeps['log']> = {
+  info: (msg, ctx) => logger.info(listenerFields(ctx), msg),
+  warn: (msg, ctx) => logger.warn(listenerFields(ctx), msg),
+  error: (msg, ctx) => logger.error(listenerFields(ctx), msg),
 };
 
 /**
@@ -209,7 +198,7 @@ async function defaultPersistTreasuryEvent(event: TreasuryProposalEvent): Promis
  * throws — RPC / DB errors are logged and the loop backs off.
  */
 export async function runForever(deps: StellarListenerDeps): Promise<void> {
-  const log = deps.log ?? consoleLogger;
+  const log = deps.log ?? pinoLogger;
   const persist = deps.persistEvent ?? defaultPersistEvent;
   const persistTreasury = deps.persistTreasuryEvent ?? defaultPersistTreasuryEvent;
   const pollMs = deps.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;

@@ -3,6 +3,7 @@ import type { AuthSocket } from '../middleware/socketAuth.js';
 import { eq, and } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { conversationMembers } from '../db/schema.js';
+import { logger } from '../lib/logger.js';
 
 /**
  * Room name constants following the pattern: room:{type}:{id}
@@ -54,7 +55,7 @@ export function joinUserRoom(socket: AuthSocket): void {
  * are in the appropriate rooms based on PostgreSQL data.
  */
 export async function rebuildRoomsAfterRestart(io: Server): Promise<void> {
-  console.log('[roomManager] Rebuilding rooms after restart');
+  logger.info({ module: 'room-manager' }, 'rebuilding rooms after restart');
 
   const sockets = await io.fetchSockets();
 
@@ -83,7 +84,7 @@ export async function rebuildRoomsAfterRestart(io: Server): Promise<void> {
     }
   }
 
-  console.log(`[roomManager] Rebuilt rooms for ${sockets.length} sockets`);
+  logger.info({ module: 'room-manager', sockets: sockets.length }, 'rebuilt rooms');
 }
 
 /**

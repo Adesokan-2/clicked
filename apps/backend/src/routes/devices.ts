@@ -50,6 +50,7 @@ import {
   releasePrekeysLowLatch,
 } from '../services/prekeyLowSignal.js';
 import { actorFromRequest, recordAuditEvent } from '../services/auditLog.js';
+import { logger } from '../lib/logger.js';
 
 export const devicesRouter: RouterType = Router();
 
@@ -677,7 +678,7 @@ devicesRouter.post(
 
       res.status(201).json({ id: row.id, createdAt: row.createdAt });
     } catch (err) {
-      console.error('Failed to register device:', err);
+      logger.error({ module: 'devices', err }, 'failed to register device');
       res.status(500).json({ error: 'Failed to register device' });
     }
   },
@@ -735,6 +736,6 @@ async function emitDeviceChangeEvent(userId: string, change: 'device_added' | 'd
       await invalidateConversationCaches(members.map((mm) => mm.userId));
     }
   } catch (err) {
-    console.error('emitDeviceChangeEvent error:', err);
+    logger.error({ module: 'devices', err }, 'failed to emit device change event');
   }
 }

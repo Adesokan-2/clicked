@@ -13,6 +13,7 @@ import { SendMessageSchema } from '../schemas/message.schemas.js';
 import { checkEnvelopeProtocols, type E2eeProtocol } from '../services/e2eeProtocol.js';
 import { insertMessageEnvelopes } from '../lib/messageFanout.js';
 import { BASELINE_PROTOCOL } from '../lib/capabilities.js';
+import { logger } from '../lib/logger.js';
 
 export const messagesRouter: IRouter = Router();
 
@@ -212,7 +213,7 @@ messagesRouter.post('/', validate(SendMessageSchema), async (req: AuthRequest, r
       return insertedMessage;
     });
   } catch (error) {
-    console.error('Transaction failed for message insert:', error);
+    logger.error({ module: 'messages', err: error }, 'message insert transaction failed');
     res.status(500).json({ error: 'Failed to persist message' });
     return;
   }

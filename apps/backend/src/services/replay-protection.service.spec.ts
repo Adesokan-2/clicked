@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import RedisMock from 'ioredis-mock';
 import type { Redis } from 'ioredis';
 import { isReplay, getReplayProtectionRedisKey, markSeen } from './replay-protection.service.js';
+import { logger } from '../lib/logger.js';
 
 describe('ReplayProtectionService', () => {
   let redis: Redis;
@@ -197,14 +198,16 @@ describe('ReplayProtectionService', () => {
         set: vi.fn().mockRejectedValueOnce(new Error('Redis connection failed')),
       } as any;
 
-      // Spy on console.warn to verify error is logged
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
 
       const result = await isReplay(errorRedis, 'device-1', 'event-1');
 
       // Should return false (fail open)
       expect(result).toBe(false);
-      expect(warnSpy).toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ module: 'replay-protection', operation: 'SET' }),
+        'Redis error, failing open',
+      );
 
       warnSpy.mockRestore();
     });
@@ -276,11 +279,14 @@ describe('ReplayProtectionService', () => {
         setex: vi.fn().mockRejectedValueOnce(new Error('Redis error')),
       } as any;
 
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
 
       // Should not throw
       await expect(markSeen(errorRedis, 'device-1', 'event-1')).resolves.not.toThrow();
-      expect(warnSpy).toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ module: 'replay-protection', operation: 'SETEX' }),
+        'Redis error',
+      );
 
       warnSpy.mockRestore();
     });

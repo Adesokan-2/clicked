@@ -32,6 +32,7 @@ import type { Redis } from 'ioredis';
 import { isNull, eq, and, gte, desc } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { devices, conversationMembers } from '../db/schema.js';
+import { logger } from '../lib/logger.js';
 
 const PRESENCE_TTL = 90; // seconds
 const SOCKET_MAPPING_PREFIX = 'presence:sockets:';
@@ -401,7 +402,7 @@ export async function cleanupStaleSockets(
           await removeStaleSocketMapping(redis, userId, sid);
         }
       } catch (err) {
-        console.warn(`[presence] Failed to check socket status for ${sid}:`, err);
+        logger.warn({ module: 'presence', socketId: sid, err }, 'failed to check socket status');
       }
     }),
   );
@@ -470,7 +471,7 @@ export async function reconcileBoot(io: Server, redis: Redis): Promise<void> {
         await redis.del(key);
       }
     } catch (err) {
-      console.warn(`[presence] Failed to rebuild subscriptions for ${userId}:`, err);
+      logger.warn({ module: 'presence', userId, err }, 'failed to rebuild subscriptions');
     }
   }
 }
