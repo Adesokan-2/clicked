@@ -101,6 +101,35 @@ fn test_transfer_succeeds() {
 }
 
 #[test]
+fn test_transfer_memo_at_max_length_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (contract_id, token_id, sender, receiver) = setup(&env);
+    let client = TokenTransferContractClient::new(&env, &contract_id);
+    let token = MockTokenClient::new(&env, &token_id);
+
+    let memo = Bytes::from_slice(&env, &[b'a'; MAX_MEMO_LEN as usize]);
+    client.transfer(&sender, &receiver, &100, &memo);
+
+    assert_eq!(token.balance(&sender), 999_900);
+    assert_eq!(token.balance(&receiver), 100);
+}
+
+#[test]
+#[should_panic(expected = "memo too long")]
+fn test_transfer_memo_over_max_length_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (contract_id, _token_id, sender, receiver) = setup(&env);
+    let client = TokenTransferContractClient::new(&env, &contract_id);
+
+    let memo = Bytes::from_slice(&env, &[b'a'; MAX_MEMO_LEN as usize + 1]);
+    client.transfer(&sender, &receiver, &100, &memo);
+}
+
+#[test]
 fn test_balance_query() {
     let env = Env::default();
     let (contract_id, _token_id, sender, _receiver) = setup(&env);
