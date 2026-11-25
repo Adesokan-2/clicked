@@ -2,32 +2,48 @@ import { Router, type Response, type IRouter } from 'express';
 import { z } from 'zod';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { treasuryProposals, proposalVotes } from '../db/schema.js';
+import { treasuryProposals, proposalVotes, conversationMembers } from '../db/schema.js';
 import { requireAuth, type AuthRequest } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
+import {
+  TTL_LEDGERS,
+  computeExpiresAt,
+  isProposalExpired,
+  resolveProposalStatus,
+} from '../services/treasuryExpiry.js';
 
 export const treasuryRouter: IRouter = Router();
 
 treasuryRouter.use(requireAuth);
-
-const TTL_LEDGERS: Record<string, number> = {
-  '24h': 17280, // ~24 h at 5 s/ledger
-  '72h': 51840,
-  '7d': 120960,
-};
 
 const proposeSchema = z.object({
   amount: z.number().positive(),
   token: z.string().min(1),
   recipient: z.string().regex(/^G[A-Z2-7]{55}$/, 'Invalid Stellar public key'),
   ttl: z.enum(['24h', '72h', '7d']),
-  conversationId: z.string().uuid().optional(),
+  // A treasury proposal must belong to an existing conversation. Legacy rows
+  // with no conversation cannot be authorized and remain inaccessible.
+  conversationId: z.string().uuid(),
   threshold: z.number().int().min(1).optional(),
 });
 
 const voteSchema = z.object({
   signature: z.string().optional(),
 });
+
+const conversationFilterSchema = z.string().uuid();
+
+async function isConversationMember(conversationId: string, userId: string): Promise<boolean> {
+  const membership = await db.query.conversationMembers.findFirst({
+    where: and(
+      eq(conversationMembers.conversationId, conversationId),
+      eq(conversationMembers.userId, userId),
+    ),
+    columns: { id: true },
+  });
+
+  return !!membership;
+}
 
 /**
  * POST /treasury/propose
@@ -37,18 +53,27 @@ treasuryRouter.post('/propose', validate(proposeSchema), async (req, res) => {
   const { amount, token, recipient, ttl, conversationId, threshold } = req.body as z.infer<
     typeof proposeSchema
   >;
+  const auth = (req as AuthRequest).auth!;
+
+  if (!(await isConversationMember(conversationId, auth.userId))) {
+    res.status(403).json({ error: 'Not a member of this conversation' });
+    return;
+  }
+
+  const expiresAt = computeExpiresAt(ttl, new Date());
 
   const [proposal] = await db
     .insert(treasuryProposals)
     .values({
       contractId: process.env.GROUP_TREASURY_CONTRACT_ID ?? 'stub',
       proposalId: `prop-${Date.now()}`,
-      conversationId: conversationId ?? null,
+      conversationId,
       status: 'active',
       recipient,
       amount: String(amount),
       token,
       threshold: threshold ?? 3,
+      expiresAt,
     })
     .returning();
 
@@ -62,12 +87,46 @@ treasuryRouter.post('/propose', validate(proposeSchema), async (req, res) => {
  */
 treasuryRouter.get('/proposals', async (req, res) => {
   const auth = (req as AuthRequest).auth!;
-  const cid = typeof req.query.conversationId === 'string' ? req.query.conversationId : null;
+  const rawConversationId = req.query.conversationId;
+  let proposalFilter;
+
+  if (rawConversationId !== undefined) {
+    const parsed = conversationFilterSchema.safeParse(rawConversationId);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid conversationId' });
+      return;
+    }
+    const conversationId = parsed.data;
+
+    if (!(await isConversationMember(conversationId, auth.userId))) {
+      res.status(403).json({ error: 'Not a member of this conversation' });
+      return;
+    }
+
+    proposalFilter = eq(treasuryProposals.conversationId, conversationId);
+  } else {
+    // Fetch only this user's memberships first. Never scan and then filter
+    // all treasury proposals in application memory.
+    const memberships = await db.query.conversationMembers.findMany({
+      where: eq(conversationMembers.userId, auth.userId),
+      columns: { conversationId: true },
+    });
+    const conversationIds = memberships.map((member) => member.conversationId);
+
+    if (conversationIds.length === 0) {
+      res.json([]);
+      return;
+    }
+
+    // SQL WHERE excludes orphaned (NULL conversationId) and other users'
+    // proposals even before any vote data is loaded.
+    proposalFilter = inArray(treasuryProposals.conversationId, conversationIds);
+  }
 
   const rows = await db
     .select()
     .from(treasuryProposals)
-    .where(cid ? eq(treasuryProposals.conversationId, cid) : undefined)
+    .where(proposalFilter)
     .orderBy(desc(treasuryProposals.createdAt));
 
   if (rows.length === 0) {
@@ -85,9 +144,14 @@ treasuryRouter.get('/proposals', async (req, res) => {
 
   const votedMap = new Map(votes.map((v) => [v.treasuryProposalId, v.vote]));
 
+  // Expiry is derived on read: status stays `active` in the DB and is reported
+  // as `expired` once `expiresAt` has passed.
+  const now = new Date();
+
   res.json(
     rows.map((r) => ({
       ...r,
+      status: resolveProposalStatus(r, now),
       hasVoted: votedMap.has(r.id),
       myVote: votedMap.get(r.id) ?? null,
     })),
@@ -111,6 +175,20 @@ async function handleVote(
 
   if (!proposal) {
     res.status(404).json({ error: 'Proposal not found' });
+    return;
+  }
+
+  if (isProposalExpired(proposal, new Date())) {
+    res.status(409).json({ error: 'Proposal has expired' });
+    return;
+  }
+  // Fail closed for legacy orphan proposals and for callers outside the
+  // proposal's conversation, before revealing its state or recording a vote.
+  if (
+    !proposal.conversationId ||
+    !(await isConversationMember(proposal.conversationId, auth.userId))
+  ) {
+    res.status(403).json({ error: 'Not a member of this conversation' });
     return;
   }
 

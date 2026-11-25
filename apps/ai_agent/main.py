@@ -9,9 +9,11 @@ from pydantic import BaseModel
 from weaviate.classes.query import Filter
 
 try:
-    from openai import OpenAI
+    from openai import APIError, APITimeoutError, OpenAI
 except ImportError:  # pragma: no cover - exercised when the dependency is absent
     OpenAI = None  # type: ignore[assignment, misc]
+    APIError = Exception  # type: ignore[assignment, misc]
+    APITimeoutError = Exception  # type: ignore[assignment, misc]
 
 app = FastAPI(title="AI Agent API")
 
@@ -96,15 +98,24 @@ def health_check():
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest):
     client = _openai_client()
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": request.message},
-        ],
-        timeout=30,
-    )
-    return ChatResponse(reply=response.choices[0].message.content)
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": request.message},
+            ],
+            timeout=30,
+        )
+    except APITimeoutError:
+        raise HTTPException(status_code=504, detail="OpenAI request timed out")
+    except APIError:
+        raise HTTPException(status_code=502, detail="OpenAI API error")
+
+    content = response.choices[0].message.content
+    if not content or not content.strip():
+        raise HTTPException(status_code=502, detail="LLM did not return a reply")
+    return ChatResponse(reply=content)
 
 
 @app.post("/transfers/analyse", response_model=TransferAnalyseResponse)
@@ -133,11 +144,23 @@ def analyse_transfer(request: TransferAnalyseRequest):
         response_format={"type": "json_object"},
         timeout=10,
     )
-    result = json.loads(response.choices[0].message.content)
+
+    try:
+        result = json.loads(response.choices[0].message.content)
+    except (json.JSONDecodeError, TypeError):
+        raise HTTPException(status_code=502, detail="LLM did not return valid JSON")
+
+    # Clamp confidence to [0, 1], default to 0.0
+    try:
+        confidence = float(result.get("confidence", 0.0))
+        confidence = max(0.0, min(1.0, confidence))
+    except (ValueError, TypeError):
+        confidence = 0.0
+
     return TransferAnalyseResponse(
         flagged=bool(result.get("flagged", False)),
         reason=result.get("reason"),
-        confidence=float(result.get("confidence", 0.0)),
+        confidence=confidence,
     )
 
 
@@ -161,7 +184,11 @@ def summarise_proposal(request: ProposalSummariseRequest):
         response_format={"type": "json_object"},
         timeout=10,
     )
-    result = json.loads(response.choices[0].message.content)
+
+    try:
+        result = json.loads(response.choices[0].message.content)
+    except (json.JSONDecodeError, TypeError):
+        raise HTTPException(status_code=502, detail="LLM did not return a summary")
 
     summary = (result.get("summary") or "").strip()
     if not summary:

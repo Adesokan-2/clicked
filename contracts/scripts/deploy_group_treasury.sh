@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Deploy group_treasury contract to Stellar testnet.
+# Deploy group_treasury contract to a Stellar network (default: testnet).
+#
+# Network configuration:
+#   NETWORK         Stellar CLI network name (default: testnet). Set to futurenet,
+#                   a configured quickstart network, mainnet, or public as needed.
+#   CONFIRM_MAINNET Must be "yes" when NETWORK is mainnet or public.
 #
 # Prerequisites:
 #   - stellar CLI installed  (https://developers.stellar.org/docs/tools/stellar-cli)
@@ -8,11 +13,17 @@
 #
 # Usage:
 #   DEPLOYER_SECRET=S... TOKEN_CONTRACT_ID=C... ./scripts/deploy_group_treasury.sh
+#   NETWORK=futurenet DEPLOYER_SECRET=S... TOKEN_CONTRACT_ID=C... ./scripts/deploy_group_treasury.sh
 
 set -euo pipefail
 
-NETWORK="testnet"
+NETWORK="${NETWORK:-testnet}"
 WASM_PATH="target/wasm32-unknown-unknown/release/group_treasury.wasm"
+
+if [[ "$NETWORK" == "mainnet" || "$NETWORK" == "public" ]] && [[ "${CONFIRM_MAINNET:-}" != "yes" ]]; then
+  echo "Error: refusing to deploy to $NETWORK without CONFIRM_MAINNET=yes" >&2
+  exit 1
+fi
 
 if [[ -z "${DEPLOYER_SECRET:-}" ]]; then
   echo "Error: DEPLOYER_SECRET is not set" >&2
@@ -24,10 +35,12 @@ if [[ -z "${TOKEN_CONTRACT_ID:-}" ]]; then
   exit 1
 fi
 
+echo "==> Target network: $NETWORK"
+
 echo "==> Building contract..."
 cargo build -p group_treasury --target wasm32-unknown-unknown --release
 
-echo "==> Uploading WASM to testnet..."
+echo "==> Uploading WASM to $NETWORK..."
 WASM_HASH=$(stellar contract upload \
   --network "$NETWORK" \
   --source "$DEPLOYER_SECRET" \

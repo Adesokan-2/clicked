@@ -10,11 +10,7 @@ import {
   runSocketSync,
   setResumeCursor,
 } from '@/lib/realtime';
-
-const SOCKET_URL =
-  process.env.NEXT_PUBLIC_SOCKET_URL ??
-  process.env.NEXT_PUBLIC_BACKEND_URL ??
-  'http://localhost:3001';
+import { BACKEND_URL } from '@/lib/api';
 
 export function useSocket(token: string | null) {
   const socket = useMemo<Socket | null>(() => {
@@ -22,7 +18,7 @@ export function useSocket(token: string | null) {
 
     const deviceId = getRealtimeDeviceId(token);
 
-    return io(SOCKET_URL, {
+    return io(BACKEND_URL, {
       auth: { token, deviceId },
       transports: ['websocket'],
       reconnection: true,
