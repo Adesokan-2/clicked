@@ -195,7 +195,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       if (conversationId) {
         router.push(`/app/conversations/${conversationId}`);
       } else {
-        router.push('/app/messages');
+        router.push('/app');
       }
     }
 
@@ -219,7 +219,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   const navItems = [
-    { href: '/app/messages', label: 'Messages', icon: <MessagesIcon /> },
+    { href: '/app', label: 'Messages', icon: <MessagesIcon /> },
     { href: '/app/treasury', label: 'Treasury', icon: <TreasuryIcon /> },
     { href: '/app/proposals', label: 'Proposals', icon: <ProposalsIcon /> },
     { href: '/app/devices', label: 'Devices', icon: <DevicesIcon /> },
@@ -249,8 +249,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 label={item.label}
                 icon={item.icon}
                 active={
-                  pathname === item.href || (item.href === '/app/messages' && pathname === '/app')
-                } // default to messages if exactly /app
+                  pathname === item.href ||
+                  (item.href === '/app' && pathname.startsWith('/app/conversations'))
+                }
               />
             ))}
           </nav>

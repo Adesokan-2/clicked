@@ -59,7 +59,7 @@ export default function SearchPage() {
           Worker: <code>src/lib/search/searchWorker.ts</code>.
         </p>
         <Link
-          href="/app/messages"
+          href="/app"
           className="inline-block text-accent-light hover:underline text-xs"
         >
           ← Back to messages

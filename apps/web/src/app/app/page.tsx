@@ -1,274 +1,300 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { MessageSearch } from '@/components/search/MessageSearch';
-import { indexMessages } from '@/lib/search/searchClient';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/components/auth/useAuth';
+import { NewConversationModal } from '@/components/chat/NewConversationModal';
+import { Avatar } from '@/components/ui/Avatar';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { SkeletonLoader } from '@/components/ui/SkeletonLoader';
+import { useSocket } from '@/hooks/useSocket';
+import {
+  createDmConversation,
+  fetchUserConversations,
+  formatRelativeTime,
+  getConversationTitle,
+  getLastMessagePreview,
+  getPeerUser,
+  type Conversation,
+} from '@/lib/conversations';
+import { parseJwtClaims } from '@/lib/realtime';
+import { useToast } from '@/lib/useToast';
 
-interface Message {
-  id: string;
-  sender: string;
-  avatar: string;
-  text: string;
-  timestamp: string;
-  isSelf: boolean;
-  tokenTransfer?: {
-    amount: string;
-    token: string;
-    txHash: string;
-  };
+export interface ConversationsHomeViewProps {
+  authLoading: boolean;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  error: string | null;
+  conversations: Conversation[];
+  currentWalletAddress?: string;
+  currentUserId?: string;
+  onRetry: () => void;
+  onNewConversation: () => void;
 }
 
-const DEMO_CONVERSATION_ID = 'demo-jed-conversation';
-
-export default function MessagesPage() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      sender: 'Jed McCaleb',
-      avatar: 'J',
-      text: 'Hey! Did you check out the new stellar-core upgrade? The transaction speeds are looking incredibly solid.',
-      timestamp: '10:24 AM',
-      isSelf: false,
-    },
-    {
-      id: '2',
-      sender: 'You',
-      avatar: 'Y',
-      text: 'Yes! The ledger close times are consistently under 4 seconds now. Just sent some test transactions.',
-      timestamp: '10:26 AM',
-      isSelf: true,
-    },
-    {
-      id: '3',
-      sender: 'Jed McCaleb',
-      avatar: 'J',
-      text: "Awesome. I've sent you the 50 XLM for the contract review. Let me know when you receive it.",
-      timestamp: '10:27 AM',
-      isSelf: false,
-      tokenTransfer: {
-        amount: '50 XLM',
-        token: 'Stellar Lumens',
-        txHash: '0x78ab...e912',
-      },
-    },
-  ]);
-
-  const [inputText, setInputText] = useState('');
-  const [showSearch, setShowSearch] = useState(false);
-
-  // Seed the local E2EE search index with demo messages (#185)
-  useEffect(() => {
-    indexMessages(
-      messages.map((m) => ({
-        id: m.id,
-        conversationId: DEMO_CONVERSATION_ID,
-        senderId: m.isSelf ? 'you' : 'jed',
-        plaintext: m.text,
-        contentType: 'text/plain',
-        createdAt: new Date().toISOString(),
-      })),
-    ).catch(() => {});
-  }, [messages]);
-
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputText.trim()) return;
-
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      sender: 'You',
-      avatar: 'Y',
-      text: inputText,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isSelf: true,
-    };
-
-    setMessages([...messages, newMessage]);
-    setInputText('');
-  };
-
-  return (
-    <div className="grid lg:grid-cols-[1fr_380px] gap-6 h-[calc(100vh-8rem)] min-h-[500px]">
-      <div className="flex flex-col bg-card/30 border border-border rounded-3xl overflow-hidden shadow-2xl backdrop-blur-md">
-        {/* Top Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card/50">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-accent to-accent-light flex items-center justify-center font-bold text-sm text-white">
-                J
-              </div>
-              <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-[#13131f] rounded-full" />
-            </div>
-            <div>
-              <h2 className="font-semibold text-foreground text-sm md:text-base">Jed McCaleb</h2>
-              <p className="text-xs text-foreground/40">Active now • GC3K...7Z8P</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowSearch(!showSearch)}
-              className="px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-xs font-medium transition-colors lg:hidden"
-            >
-              {showSearch ? 'Hide search' : 'Search'}
-            </button>
-            <Link
-              href="/app/search"
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-foreground/70 text-xs font-medium transition-all"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-              Search
-            </Link>
-            {/* Quick Pay Action Button */}
-            <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-accent/10 hover:bg-accent/20 text-accent-light text-xs font-semibold transition-all duration-300">
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2.5}
-                  d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              Send XLM
-            </button>
+export function ConversationsHomeView({
+  authLoading,
+  isAuthenticated,
+  isLoading,
+  error,
+  conversations,
+  currentWalletAddress,
+  currentUserId,
+  onRetry,
+  onNewConversation,
+}: ConversationsHomeViewProps) {
+  if (authLoading || (isAuthenticated && isLoading)) {
+    return (
+      <div className="mx-auto max-w-4xl space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Messages</h1>
+            <p className="mt-1 text-sm text-foreground/45">Your end-to-end encrypted conversations</p>
           </div>
         </div>
-
-        {showSearch && (
-          <div className="px-4 py-3 border-b border-border bg-card/20 lg:hidden">
-            <MessageSearch
-              conversationId={DEMO_CONVERSATION_ID}
-              placeholder="Search this conversation…"
-            />
-          </div>
-        )}
-
-        {/* Messages Scroll Area */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin scrollbar-thumb-white/5">
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex items-end gap-3.5 max-w-[85%] md:max-w-[70%] ${
-                msg.isSelf ? 'ml-auto flex-row-reverse' : ''
-              }`}
-            >
-              {/* Avatar */}
-              <div className="flex-shrink-0">
-                <div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${
-                    msg.isSelf
-                      ? 'bg-white/10 text-white'
-                      : 'bg-gradient-to-tr from-accent to-accent-light text-white'
-                  }`}
-                >
-                  {msg.avatar}
-                </div>
-              </div>
-
-              {/* Message Bubble Container */}
-              <div className="flex flex-col gap-1">
-                <div
-                  className={`px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm ${
-                    msg.isSelf
-                      ? 'bg-accent text-white rounded-br-none'
-                      : 'bg-[#1e1e2f] text-foreground/90 rounded-bl-none border border-white/[0.03]'
-                  }`}
-                >
-                  {msg.text}
-
-                  {/* Optional token transfer attachment */}
-                  {msg.tokenTransfer && (
-                    <div className="mt-3 p-3 rounded-xl bg-black/20 border border-white/5 flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2.5}
-                              d="M5 13l4 4L19 7"
-                            />
-                          </svg>
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold text-emerald-400">
-                            Received {msg.tokenTransfer.amount}
-                          </p>
-                          <p className="text-[10px] text-white/40">{msg.tokenTransfer.token}</p>
-                        </div>
-                      </div>
-                      <span className="text-[10px] font-mono text-accent-light bg-accent/10 px-2 py-0.5 rounded">
-                        {msg.tokenTransfer.txHash}
-                      </span>
-                    </div>
-                  )}
-                </div>
-                <span
-                  className={`text-[10px] text-foreground/30 px-1 ${msg.isSelf ? 'text-right' : ''}`}
-                >
-                  {msg.timestamp}
-                </span>
-              </div>
-            </div>
+        <div className="flex flex-col gap-3" aria-label="Loading conversations">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <SkeletonLoader key={index} variant="card" />
           ))}
         </div>
-
-        {/* Input Form */}
-        <form
-          onSubmit={handleSendMessage}
-          className="p-4 bg-card/40 border-t border-border flex items-center gap-3"
-        >
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder="Type a secure message..."
-            className="flex-1 bg-[#13131f]/60 hover:bg-[#13131f]/80 focus:bg-[#13131f] border border-border focus:border-accent rounded-2xl px-5 py-3.5 text-sm focus:outline-none transition-all duration-300 placeholder:text-foreground/30"
-          />
-          <button
-            type="submit"
-            className="p-3.5 rounded-2xl bg-accent hover:bg-accent-light text-white font-medium shadow-md shadow-accent/20 transition-all duration-300 hover:scale-105 active:scale-95"
-          >
-            <svg
-              className="w-5 h-5 transform rotate-90"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2.5}
-                d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-              />
-            </svg>
-          </button>
-        </form>
       </div>
+    );
+  }
 
-      {/* Search sidebar - desktop */}
-      <div className="hidden lg:block bg-card/30 border border-border rounded-3xl p-5 overflow-y-auto">
-        <h3 className="font-semibold text-sm mb-3">Search messages</h3>
-        <MessageSearch
-          conversationId={DEMO_CONVERSATION_ID}
-          placeholder="Search in conversation…"
+  if (!isAuthenticated) {
+    return (
+      <div className="mx-auto flex min-h-[60vh] max-w-3xl items-center justify-center">
+        <EmptyState
+          icon="🔐"
+          title="Sign in to view your messages"
+          description="Connect your Stellar wallet to load your conversations and start messaging."
         />
-        <div className="mt-4 text-[11px] text-foreground/40 leading-relaxed">
-          Local E2EE search. Try: <code>stellar</code>, <code>xlm</code>, <code>transactions</code>.
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="mx-auto flex min-h-[60vh] max-w-3xl items-center justify-center">
+        <EmptyState
+          icon="!"
+          title="Unable to load conversations"
+          description={error}
+          action={{ label: 'Retry', onClick: onRetry }}
+        />
+      </div>
+    );
+  }
+
+  if (conversations.length === 0) {
+    return (
+      <div className="mx-auto flex min-h-[60vh] max-w-3xl items-center justify-center">
+        <EmptyState
+          icon="💬"
+          title="No conversations yet"
+          description="Start a new encrypted conversation with someone on Clicked."
+          action={{ label: 'New conversation', onClick: onNewConversation }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Messages</h1>
+          <p className="mt-1 text-sm text-foreground/45">Your end-to-end encrypted conversations</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/app/search"
+            className="rounded-full border border-border bg-card/40 px-4 py-2 text-xs font-medium text-foreground/75 transition-colors hover:bg-card/80"
+          >
+            Search
+          </Link>
+          <button
+            type="button"
+            onClick={onNewConversation}
+            className="rounded-full bg-accent px-5 py-2 text-xs font-semibold text-white shadow-lg shadow-accent/20 transition-opacity hover:opacity-90"
+          >
+            New conversation
+          </button>
         </div>
       </div>
+
+      <div className="flex flex-col gap-2.5">
+        {conversations.map((conversation) => {
+          const lastMessage = conversation.messages?.[0];
+          const unread = conversation.unreadCount ?? 0;
+          const title = getConversationTitle(conversation, currentWalletAddress, currentUserId);
+          const peer = getPeerUser(conversation, currentWalletAddress, currentUserId);
+          const avatarUrl = peer?.avatarUrl ?? conversation.avatarUrl ?? undefined;
+          const memberCount = conversation.members?.length ?? 0;
+
+          return (
+            <Link
+              key={conversation.id}
+              href={`/app/conversations/${conversation.id}`}
+              className="flex items-center gap-4 rounded-2xl border border-border bg-card/30 p-4 transition-colors hover:border-accent/50 hover:bg-card/60"
+            >
+              <Avatar src={avatarUrl} fallback={title} size="md" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-sm font-semibold text-foreground">{title}</h2>
+                    {conversation.type === 'group' ? (
+                      <span className="text-xs text-foreground/45">
+                        {memberCount} member{memberCount !== 1 ? 's' : ''}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <span className="text-xs text-foreground/40">
+                      {formatRelativeTime(lastMessage?.createdAt ?? conversation.createdAt)}
+                    </span>
+                    {unread > 0 ? (
+                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                        {unread > 99 ? '99+' : unread}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+                <p className="mt-1 truncate text-sm text-foreground/50">
+                  {getLastMessagePreview(lastMessage)}
+                </p>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
     </div>
+  );
+}
+
+export default function AppPage() {
+  const router = useRouter();
+  const { token, loading: authLoading } = useAuth();
+  const socket = useSocket(token);
+  const { error: toastError } = useToast();
+
+  const claims = parseJwtClaims(token);
+
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isNewModalOpen, setIsNewModalOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const createAbortRef = useRef<AbortController | null>(null);
+  const navigatedRef = useRef(false);
+
+  const handleRetry = useCallback(() => {
+    setReloadKey((prev) => prev + 1);
+  }, []);
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!token) {
+      setConversations([]);
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setIsLoading(true);
+    setError(null);
+
+    fetchUserConversations(token, controller.signal)
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        setConversations(data);
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
+        setError(err instanceof Error ? err.message : 'Unable to load conversations');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [authLoading, token, reloadKey]);
+
+  useEffect(() => {
+    return () => {
+      createAbortRef.current?.abort();
+    };
+  }, []);
+
+  const handleCloseModal = useCallback(() => {
+    createAbortRef.current?.abort();
+    createAbortRef.current = null;
+    setCreating(false);
+    setIsNewModalOpen(false);
+  }, []);
+
+  const handleSelectUser = useCallback(
+    async (user: { id: string; username: string | null; avatarUrl: string | null }) => {
+      if (creating) return;
+
+      createAbortRef.current?.abort();
+      const controller = new AbortController();
+      createAbortRef.current = controller;
+      setCreating(true);
+
+      try {
+        const created = await createDmConversation(socket, user.id, { signal: controller.signal });
+        if (controller.signal.aborted || navigatedRef.current) return;
+        navigatedRef.current = true;
+        setIsNewModalOpen(false);
+        router.push(`/app/conversations/${created.id}`);
+      } catch (err: unknown) {
+        if (controller.signal.aborted) return;
+        toastError(err instanceof Error ? err.message : 'Failed to create conversation');
+      } finally {
+        if (!controller.signal.aborted) {
+          setCreating(false);
+        }
+        if (createAbortRef.current === controller) {
+          createAbortRef.current = null;
+        }
+      }
+    },
+    [creating, router, socket, toastError],
+  );
+
+  return (
+    <>
+      <ConversationsHomeView
+        authLoading={authLoading}
+        isAuthenticated={Boolean(token)}
+        isLoading={isLoading}
+        error={error}
+        conversations={conversations}
+        currentWalletAddress={claims.walletAddress}
+        currentUserId={claims.userId}
+        onRetry={handleRetry}
+        onNewConversation={() => setIsNewModalOpen(true)}
+      />
+
+      {token ? (
+        <NewConversationModal
+          open={isNewModalOpen}
+          token={token}
+          creating={creating}
+          onClose={handleCloseModal}
+          onSelectUser={handleSelectUser}
+        />
+      ) : null}
+    </>
   );
 }
