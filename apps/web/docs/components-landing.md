@@ -2,9 +2,7 @@
 
 Reference for `apps/web/src/components/landing/`. The public landing page is composed in
 [`apps/web/src/app/page.tsx`](../src/app/page.tsx), which mounts these seven components in
-order: `Navbar`, `Hero`, `Features`, `HowItWorks`, `TechStack`, `CTA`, `Footer`. The page
-also mounts `ToastDemo` between `TechStack` and `CTA`. That component is not part of
-`landing/` and is not covered here.
+order: `Navbar`, `Hero`, `Features`, `HowItWorks`, `TechStack`, `CTA`, `Footer`.
 
 Every component in this folder is presentational. None of them take props. Copy and links
 are string literals in the same file as the component (or in a `const` array at the top of
