@@ -37,6 +37,29 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+describe('unknown routes', () => {
+  it('returns a JSON 404 for an unknown path', async () => {
+    const res = await request(app).get('/this-route-does-not-exist');
+
+    expect(res.status).toBe(404);
+    expect(res.headers['content-type']).toMatch(/application\/json/);
+    expect(res.body).toEqual({ error: 'Not found' });
+  });
+});
+
+describe('unhandled errors', () => {
+  it('returns a JSON 500 with no stack when a route throws', async () => {
+    mockExecute.mockRejectedValueOnce(new Error('boom: secret internal detail'));
+
+    const res = await request(app).get('/health-throw-probe');
+
+    expect(res.status).toBe(500);
+    expect(res.headers['content-type']).toMatch(/application\/json/);
+    expect(res.body).toEqual({ error: 'Internal server error' });
+    expect(JSON.stringify(res.body)).not.toMatch(/stack|boom|secret internal detail/);
+  });
+});
+
 describe('GET /health', () => {
   it('returns the db status, node version, and app version', async () => {
     mockExecute.mockResolvedValue([]);
