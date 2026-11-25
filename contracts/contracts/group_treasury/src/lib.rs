@@ -29,8 +29,9 @@ pub struct GroupTreasuryContract;
 impl GroupTreasuryContract {
     /// One-time initialisation. Sets the admin, the approval `threshold`, and sets up the
     /// balances map and members set. `threshold` is the number of approvals required to
-    /// execute a withdraw proposal and must be at least 1.
-    pub fn initialize(env: Env, admin: Address, _token: Address, threshold: u32) {
+    /// execute a withdraw proposal and must be at least 1. Tokens are selected per
+    /// deposit or withdrawal; initialization does not restrict the accepted tokens.
+    pub fn initialize(env: Env, admin: Address, threshold: u32) {
         if env.storage().instance().has(&DataKey::Admin) {
             panic!("already initialized");
         }

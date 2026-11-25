@@ -21,7 +21,7 @@ needs to run, what it changes as a side effect, and whether CI actually invokes 
 | `migrate` | `pnpm --filter backend db:migrate` (→ `drizzle-kit migrate`) | A reachable `DATABASE_URL` | Applies pending Drizzle migrations to that database | No — see [migrations.md](../apps/backend/docs/migrations.md) for how CI/deploy actually applies migrations |
 | `test` | `pnpm --filter backend test` then `cd contracts && cargo test` | Backend test deps + a Rust toolchain with `wasm32-unknown-unknown` | Runs the backend's vitest suite, then every contract's `cargo test` (all three packages, since plain `cargo test` with no `-p` runs the whole workspace) | No — CI's own workflows invoke these tool directly (`backend-ci.yml`, `contracts-ci.yml`), not through this target |
 | `lint` | `pnpm lint` (→ `turbo run lint`) | Workspace deps installed | Runs every app's own `lint` script via Turborepo | No — CI invokes each app's lint directly |
-| `deploy-contracts` | `bash contracts/scripts/deploy_token_transfer.sh` then `bash contracts/scripts/deploy_group_treasury.sh` | `stellar` CLI, `DEPLOYER_SECRET`, `TOKEN_CONTRACT_ID` (see each script's own prerequisites below) | Deploys and initializes two contracts to the configured network | No |
+| `deploy-contracts` | `bash contracts/scripts/deploy_token_transfer.sh` then `bash contracts/scripts/deploy_group_treasury.sh` | `stellar` CLI, `DEPLOYER_SECRET`, `TOKEN_CONTRACT_ID`, `THRESHOLD` (see each script's own prerequisites below) | Deploys and initializes two contracts to the configured network | No |
 
 **A real gap, verified against the actual scripts**: `deploy-contracts` runs only two of
 the three deploy scripts. `contracts/scripts/deploy_proposals.sh` exists, has its own
@@ -161,7 +161,7 @@ a `NETWORK` variable defaulting to `testnet`, requiring the `stellar` CLI and
 | Script | Additional required env vars | Deploys |
 |---|---|---|
 | `deploy_token_transfer.sh` | `TOKEN_CONTRACT_ID` (the SEP-41 token to route transfers through) | `token_transfer` |
-| `deploy_group_treasury.sh` | `TOKEN_CONTRACT_ID` (the SEP-41 token the treasury holds) | `group_treasury` |
+| `deploy_group_treasury.sh` | `THRESHOLD` (required approvals, 1 to 4294967295) | `group_treasury` |
 | `deploy_proposals.sh` | `TREASURY_CONTRACT_ID`, `MIN_VOTES` | `proposals` |
 
 All three pass `NETWORK` to `stellar --network` (default: `testnet`). Setting it to `mainnet` or `public` requires `CONFIRM_MAINNET=yes`.
